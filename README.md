@@ -23,6 +23,7 @@ Open **http://localhost:5173**. Vite proxies `/api` to port 3001. Register a new
 - Public, unlisted and private quizzes; share links and quiz IDs; configurable layout, time limit, review, answer visibility, passing score, question/answer shuffling, guest permission, and rankings.
 - Automatic scoring on the server, normalized accepted text answers, creator review for manually graded answers, result details, retakes, result sharing, and opt-in public rankings.
 - Dashboard, activity/performance chart, personal best, achievements, learning streak, draft/published filters and manual grading queue.
+- Optional Flashcards on owned quiz cards: tap to reveal answers and explanations, swipe left for the next question or right for the previous one, with a brief flip animation between cards, use arrow buttons/keys, and restart a deck. Flashcards open in a focused overlay above a blurred library on every screen size. Background controls are inactive, keyboard focus stays in study mode, and Escape or Back closes it. Long answers scroll inside the card. Study sessions never create quiz attempts, scores, history or leaderboard entries. Missing answers point back to the editor.
 - Reporting, administrator-only platform statistics and moderation with hide/resolve actions.
 
 Published quiz edits preserve the historical question versions and settings used by earlier attempts. All draft attempts count as previews, including runs opened from Saved quizzes, and never appear in history or rankings. Owners can delete quizzes from My quizzes after confirmation. Deletion removes them from libraries, discovery and saved collections, disables share links, and removes the creator’s own attempts from history. Other participants’ published scores remain in their history. Existing draft runs and creator runs of deleted quizzes are corrected automatically when the server starts.
@@ -71,6 +72,8 @@ npm run test:e2e
 ```
 
 API tests use a separate temporary database and port 3002. Browser tests launch an isolated production server on port 3003 with a separate database and use an installed Chrome at the Windows default path. Set `CHROME_PATH` to your Chrome executable on another system. Tests exercise desktop/tablet/mobile layouts, account creation, studio preview/publishing, bookmarks, guest quiz completion, dark mode, keyboard dialog dismissal, ownership, answer protection, grading, duplicate submission, timer expiry, private/unlisted access and moderation.
+
+Responsive workflow tests cover 320, 390, 768, and 1024px touch viewports, including long content, flashcard flipping, horizontal swipes, vertical answer scrolling, draft editing, timed quiz completion, and results. Discovery is also checked at 375 and 1440px.
 
 ## Deploy
 

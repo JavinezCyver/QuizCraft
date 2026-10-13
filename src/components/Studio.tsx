@@ -427,15 +427,17 @@ export function Studio({
                     </p>
                     {question.options.map((option, i) => (
                       <div className="option-edit" key={i}>
-                        <input
-                          type="radio"
-                          aria-label={`Mark option ${i + 1} correct`}
-                          name={`correct-${question.id}`}
-                          checked={correctOption === i}
-                          onChange={() =>
-                            update({ accepted: [option], correctOption: i })
-                          }
-                        />
+                        <label className="correct-option-toggle">
+                          <input
+                            type="radio"
+                            aria-label={`Mark option ${i + 1} correct`}
+                            name={`correct-${question.id}`}
+                            checked={correctOption === i}
+                            onChange={() =>
+                              update({ accepted: [option], correctOption: i })
+                            }
+                          />
+                        </label>
                         <input
                           aria-label={`Option ${i + 1}`}
                           value={option}

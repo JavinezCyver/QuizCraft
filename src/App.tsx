@@ -39,12 +39,14 @@ import {
   Flag,
   Clock,
   Trash2,
+  Layers,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Dialog } from "./components/ui/dialog";
 import { Studio } from "./components/Studio";
 import { Player } from "./components/Player";
+import { Flashcards } from "./components/Flashcards";
 import {
   api,
   categories,
@@ -140,12 +142,14 @@ function QuizCard({
   onSave,
   saved,
   onEdit,
+  onFlashcards,
 }: {
   quiz: Quiz;
   onOpen: () => void;
   onSave: () => void;
   saved: boolean;
   onEdit?: () => void;
+  onFlashcards?: () => void;
 }) {
   const Icon = categoryIcons[quiz.category] || BookOpen;
   return (
@@ -206,6 +210,11 @@ function QuizCard({
             <button className="text-link" onClick={onEdit}>
               <Pencil size={14} /> Edit quiz
             </button>
+            {onFlashcards && (
+              <button className="text-link" onClick={onFlashcards}>
+                <Layers size={14} /> Flashcards
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -293,6 +302,14 @@ export default function App() {
       setAuthMode("reset");
       setAuthOpen(true);
     }
+  }, []);
+  useEffect(() => {
+    const mobileLayout = window.matchMedia("(max-width: 760px)");
+    const closeDesktopMenu = () => {
+      if (!mobileLayout.matches) setMobile(false);
+    };
+    mobileLayout.addEventListener("change", closeDesktopMenu);
+    return () => mobileLayout.removeEventListener("change", closeDesktopMenu);
   }, []);
   useEffect(() => {
     const handler = (event: PromiseRejectionEvent) => {
@@ -448,6 +465,14 @@ export default function App() {
           onOpen={() => openQuiz(q)}
           onSave={() => saveQuiz(q)}
           saved={library.bookmarks.includes(q.id)}
+          onFlashcards={
+            editable
+              ? () => {
+                  setActiveQuiz(q);
+                  setView("flashcards");
+                }
+              : undefined
+          }
           onEdit={
             editable
               ? () => {
@@ -479,7 +504,10 @@ export default function App() {
           : "A little progress, every day";
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${mobile ? "mobile-open" : ""}`}>
+      <aside
+        id="quizcraft-navigation"
+        className={`sidebar ${mobile ? "mobile-open" : ""}`}
+      >
         <a
           className="brand"
           href="/"
@@ -605,6 +633,8 @@ export default function App() {
             <button
               className="mobile-menu icon-btn"
               aria-label="Open navigation"
+              aria-controls="quizcraft-navigation"
+              aria-expanded={mobile}
               onClick={() => setMobile(true)}
             >
               <Menu size={22} />
@@ -636,8 +666,10 @@ export default function App() {
                 Log in
               </button>
             )}
-            <Button size="sm" onClick={createQuiz}>
-              <Plus size={16} /> Create a Quiz
+            <Button size="sm" onClick={createQuiz} aria-label="Create a Quiz">
+              <Plus size={16} />
+              <span className="create-label-full">Create a Quiz</span>
+              <span className="create-label-mobile">Create</span>
             </Button>
           </div>
         </header>
@@ -660,6 +692,19 @@ export default function App() {
               }}
               notify={notify}
             />
+          ) : view === "flashcards" && activeQuiz ? (
+            <>
+              {cards(library.quizzes, true)}
+              <Flashcards
+                key={activeQuiz.id}
+                quizId={activeQuiz.id}
+                onBack={() => navigate("quizzes")}
+                onEdit={() => {
+                  setEditId(activeQuiz.id);
+                  setView("studio");
+                }}
+              />
+            </>
           ) : view === "take" && activeQuiz ? (
             <>
               <Player
