@@ -6,6 +6,7 @@ export type User = {
   admin: boolean;
 };
 export type Question = {
+  correctOption?: number | null;
   id: string;
   type: "multiple" | "boolean" | "blank" | "short";
   prompt: string;

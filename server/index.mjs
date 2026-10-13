@@ -45,11 +45,18 @@ const questions = (id) =>
   all(
     "SELECT * FROM questions WHERE quiz_id=? AND active=1 ORDER BY position",
     id,
-  ).map((q) => ({
-    ...q,
-    options: JSON.parse(q.options),
-    accepted: JSON.parse(q.accepted),
-  }));
+  ).map((q) => {
+    const options = JSON.parse(q.options),
+      accepted = JSON.parse(q.accepted);
+    const legacyIndex = accepted.length ? options.indexOf(accepted[0]) : -1;
+    return {
+      ...q,
+      options,
+      accepted,
+      correctOption:
+        q.correct_option ?? (legacyIndex >= 0 ? legacyIndex : null),
+    };
+  });
 const auth = (req, res, next) => {
   if (!req.user)
     return res.status(401).json({ error: "Please sign in to continue." });
@@ -417,7 +424,7 @@ app.put("/api/quizzes/:id", auth, (req, res) => {
     run("UPDATE questions SET active=0 WHERE quiz_id=?", old.id);
     q.questions.forEach((x, i) =>
       run(
-        "INSERT INTO questions(id,quiz_id,position,type,prompt,options,accepted,explanation,points) VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO questions(id,quiz_id,position,type,prompt,options,accepted,explanation,points,correct_option) VALUES(?,?,?,?,?,?,?,?,?,?)",
         randomUUID(),
         old.id,
         i,
@@ -427,6 +434,7 @@ app.put("/api/quizzes/:id", auth, (req, res) => {
         JSON.stringify(x.accepted || []),
         x.explanation || "",
         Number(x.points) || 10,
+        x.correctOption ?? null,
       ),
     );
     db.exec("COMMIT");
@@ -477,7 +485,7 @@ app.post("/api/quizzes/:id/duplicate", auth, (req, res) => {
   );
   for (const x of questions(q.id))
     run(
-      "INSERT INTO questions(id,quiz_id,position,type,prompt,options,accepted,explanation,points) VALUES(?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO questions(id,quiz_id,position,type,prompt,options,accepted,explanation,points,correct_option) VALUES(?,?,?,?,?,?,?,?,?,?)",
       randomUUID(),
       id,
       x.position,
@@ -487,6 +495,7 @@ app.post("/api/quizzes/:id/duplicate", auth, (req, res) => {
       JSON.stringify(x.accepted),
       x.explanation,
       x.points,
+      x.correctOption ?? null,
     );
   res.json({ id });
 });
@@ -519,6 +528,18 @@ app.post("/api/quizzes/:id/start", (req, res) => {
     return res
       .status(400)
       .json({ error: "Add questions before previewing this quiz." });
+  const emptyChoices = qs.findIndex(
+    (question) =>
+      ["multiple", "boolean"].includes(question.type) &&
+      (question.options.length < 2 ||
+        question.options.some((option) => !option.trim())),
+  );
+  if (emptyChoices >= 0)
+    return res
+      .status(400)
+      .json({
+        error: `Question ${emptyChoices + 1} has empty answer choices. Open Edit quiz and enter text for every answer option before starting.`,
+      });
   if (s.randomQuestions) qs = shuffle(qs);
   const id = secret(),
     started = Date.now(),
@@ -541,10 +562,12 @@ app.post("/api/quizzes/:id/start", (req, res) => {
     started,
     deadline,
     quiz: { ...parse(q), preview },
-    questions: qs.map(({ accepted, explanation, ...x }) => ({
-      ...x,
-      options: s.randomAnswers ? shuffle(x.options) : x.options,
-    })),
+    questions: qs.map(
+      ({ accepted, explanation, correctOption, correct_option, ...x }) => ({
+        ...x,
+        options: s.randomAnswers ? shuffle(x.options) : x.options,
+      }),
+    ),
   });
 });
 app.put("/api/attempts/:id/answers", (req, res) => {

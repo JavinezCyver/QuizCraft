@@ -56,6 +56,9 @@ export function Player({
     [rank, setRank] = useState(false),
     [attempt, setAttempt] = useState<Attempt | null>(null),
     [answers, setAnswers] = useState<Record<string, string>>({}),
+    [selectedOptions, setSelectedOptions] = useState<Record<string, number>>(
+      {},
+    ),
     [index, setIndex] = useState(0),
     [review, setReview] = useState(false),
     [result, setResult] = useState<Result | null>(null),
@@ -110,6 +113,7 @@ export function Player({
       setAttempt(a);
       setResult(null);
       setAnswers({});
+      setSelectedOptions({});
       setIndex(0);
       setReview(false);
       setNow(Date.now());
@@ -158,13 +162,17 @@ export function Player({
         <div className="answer-options">
           {q.options.map((option, n) => (
             <button
-              className={answers[q.id] === option ? "selected" : ""}
+              className={selectedOptions[q.id] === n ? "selected" : ""}
+              aria-pressed={selectedOptions[q.id] === n}
               key={n}
-              onClick={() => setAnswers((a) => ({ ...a, [q.id]: option }))}
+              onClick={() => {
+                setSelectedOptions((current) => ({ ...current, [q.id]: n }));
+                setAnswers((a) => ({ ...a, [q.id]: option }));
+              }}
             >
               <span>{String.fromCharCode(65 + n)}</span>
               {option}
-              {answers[q.id] === option && <Check size={18} />}
+              {selectedOptions[q.id] === n && <Check size={18} />}
             </button>
           ))}
         </div>

@@ -182,6 +182,194 @@ test("delete confirmation can be canceled and removes an owned quiz", async ({
   ).toHaveCount(0);
   expect((await page.request.get("/api/quizzes/" + id)).status()).toBe(404);
 });
+test("correct option stays selected with identical text; sidebar questions can be deleted", async ({
+  page,
+}) => {
+  await page.request.post("/api/auth/register", {
+    data: {
+      name: "Option tester",
+      email: `options-${Date.now()}@example.test`,
+      password: "option-test-password",
+    },
+  });
+  const { id } = await (
+    await page.request.post("/api/quizzes", { data: {} })
+  ).json();
+  const current = await (await page.request.get("/api/quizzes/" + id)).json();
+  await page.request.put("/api/quizzes/" + id, {
+    data: {
+      ...current,
+      questions: [
+        {
+          type: "multiple",
+          prompt: "Repeated options",
+          options: ["same", "same", "same", "same"],
+          accepted: ["same"],
+          correctOption: 3,
+          explanation: "",
+          points: 10,
+        },
+        {
+          type: "boolean",
+          prompt: "Keep this selected question",
+          options: ["True", "False"],
+          accepted: ["True"],
+          correctOption: 0,
+          explanation: "",
+          points: 10,
+        },
+      ],
+    },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "My quizzes", exact: true }).click();
+  await page.getByRole("button", { name: "Edit quiz", exact: true }).click();
+  await expect(
+    page.getByRole("radio", { name: "Mark option 4 correct", exact: true }),
+  ).toBeChecked();
+  await page
+    .getByRole("radio", { name: "Mark option 1 correct", exact: true })
+    .check();
+  await expect(
+    page.getByRole("radio", { name: "Mark option 1 correct", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("radio", { name: "Mark option 4 correct", exact: true }),
+  ).not.toBeChecked();
+  await page
+    .getByRole("textbox", { name: "Option 2", exact: true })
+    .fill("different");
+  await expect(
+    page.getByRole("radio", { name: "Mark option 1 correct", exact: true }),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Made by you" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Edit quiz", exact: true }).click();
+  await expect(
+    page.getByRole("radio", { name: "Mark option 1 correct", exact: true }),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "Add question", exact: true }).click();
+  await page
+    .getByRole("radio", { name: "Mark option 2 correct", exact: true })
+    .check();
+  await expect(
+    page.getByRole("radio", { name: "Mark option 2 correct", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("radio", { name: "Mark option 4 correct", exact: true }),
+  ).not.toBeChecked();
+  await page
+    .getByRole("button", { name: "Delete question 3", exact: true })
+    .click();
+  await page
+    .locator(".question-select")
+    .filter({ hasText: "Keep this selected question" })
+    .click();
+  await page
+    .getByRole("button", { name: "Delete question 1", exact: true })
+    .click();
+  await expect(
+    page.getByRole("textbox", { name: "Your question", exact: true }),
+  ).toHaveValue("Keep this selected question");
+  await page
+    .getByRole("button", { name: "Delete question 1", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Add first question", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Made by you" }),
+  ).toBeVisible();
+  expect(
+    (await (await page.request.get("/api/quizzes/" + id)).json()).questions,
+  ).toHaveLength(0);
+});
+test("quiz taking rejects blank choices and selects exactly one repeated option", async ({
+  page,
+}) => {
+  await page.request.post("/api/auth/register", {
+    data: {
+      name: "Choice tester",
+      email: `choice-${Date.now()}@example.test`,
+      password: "choice-test-password",
+    },
+  });
+  const { id } = await (
+    await page.request.post("/api/quizzes", { data: {} })
+  ).json();
+  const draft = await (await page.request.get("/api/quizzes/" + id)).json();
+  await page.request.put("/api/quizzes/" + id, {
+    data: {
+      ...draft,
+      questions: [
+        {
+          type: "multiple",
+          prompt: "Blank choices",
+          options: ["", "", "", ""],
+          accepted: [""],
+          correctOption: 0,
+          explanation: "",
+          points: 10,
+        },
+        {
+          type: "multiple",
+          prompt: "Repeated choices",
+          options: ["same", "same", "same", "same"],
+          accepted: ["same"],
+          correctOption: 0,
+          explanation: "",
+          points: 10,
+        },
+      ],
+    },
+  });
+  await page.goto(`/?quiz=${id}`);
+  await page.getByRole("button", { name: /get started/ }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Question 1 has empty answer choices",
+  );
+  await expect(page.locator(".answer-options > button")).toHaveCount(0);
+  const completedDraft = await (
+    await page.request.get("/api/quizzes/" + id)
+  ).json();
+  completedDraft.questions[0].options = ["Mercury", "Venus", "Earth", "Mars"];
+  completedDraft.questions[0].accepted = ["Mercury"];
+  await page.request.put("/api/quizzes/" + id, { data: completedDraft });
+  await page.getByRole("button", { name: /get started/ }).click();
+  const choices = page.locator(".answer-options > button");
+  await expect(choices.nth(0)).toContainText("Mercury");
+  await expect(choices.nth(3)).toContainText("Mars");
+  await expect(page.locator(".answer-options > button.selected")).toHaveCount(
+    0,
+  );
+  await choices.nth(0).click();
+  await expect(choices.nth(0)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".answer-options > button.selected")).toHaveCount(
+    1,
+  );
+  await choices.nth(3).click();
+  await expect(choices.nth(0)).toHaveAttribute("aria-pressed", "false");
+  await expect(choices.nth(3)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".answer-options > button.selected")).toHaveCount(
+    1,
+  );
+  await page.getByRole("button", { name: "Next question" }).click();
+  await choices.nth(1).click();
+  await choices.nth(2).click();
+  await expect(choices.nth(1)).toHaveAttribute("aria-pressed", "false");
+  await expect(choices.nth(2)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".answer-options > button.selected")).toHaveCount(
+    1,
+  );
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(choices.nth(3)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".answer-options > button.selected")).toHaveCount(
+    1,
+  );
+});
 test("mobile menu, dark mode and keyboard dialog", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");

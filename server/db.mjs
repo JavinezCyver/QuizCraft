@@ -14,6 +14,14 @@ CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY,quiz_id TEXT REFERENCES 
 CREATE TABLE IF NOT EXISTS responses(attempt_id TEXT REFERENCES attempts(id),question_id TEXT REFERENCES questions(id),answer TEXT,earned REAL,PRIMARY KEY(attempt_id,question_id));
 CREATE TABLE IF NOT EXISTS bookmarks(user_id TEXT REFERENCES users(id),quiz_id TEXT REFERENCES quizzes(id) ON DELETE CASCADE,PRIMARY KEY(user_id,quiz_id));
 CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),quiz_id TEXT REFERENCES quizzes(id),reason TEXT,status TEXT DEFAULT 'open',created TEXT DEFAULT CURRENT_TIMESTAMP);`);
+if (
+  !db
+    .prepare("PRAGMA table_info(questions)")
+    .all()
+    .some((column) => column.name === "correct_option")
+) {
+  db.exec("ALTER TABLE questions ADD COLUMN correct_option INTEGER");
+}
 
 // Repair earlier draft runs and a creator's own runs of deleted quizzes.
 // Historical published attempts by other participants remain real attempts.

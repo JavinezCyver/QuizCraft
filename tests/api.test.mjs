@@ -279,6 +279,8 @@ test("publish validation, owner-only editing, and protected question answers", a
   ).data;
   assert.equal(attempt.questions[0].accepted, undefined);
   assert.equal(attempt.questions[0].explanation, undefined);
+  assert.equal(attempt.questions[0].correctOption, undefined);
+  assert.equal(attempt.questions[0].correct_option, undefined);
   assert.ok(attempt.questions.length === 4);
 });
 test("automatic scoring, duplicate submit, manual grading and historic edit safety", async () => {

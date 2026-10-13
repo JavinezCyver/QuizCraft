@@ -1775,7 +1775,7 @@ main {
   padding: 3px 6px;
   border-radius: 4px;
 }
-.question-list > button:not(.button) {
+.question-list-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1786,15 +1786,15 @@ main {
   margin-bottom: 5px;
   font-size: 11px;
 }
-.question-list > button > b {
+.question-select > b {
   color: #a990c8;
 }
-.question-list > button > span {
+.question-select > span {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.question-list > button.active {
+.question-list-row.active {
   background: var(--purple-soft);
   color: var(--purple);
 }
@@ -2880,7 +2880,7 @@ label small {
   .question-list .studio-tip {
     display: none;
   }
-  .question-list > button:not(.button) {
+  .question-list-row {
     display: inline-flex;
     width: auto;
     max-width: 170px;
@@ -3074,7 +3074,7 @@ label small {
   .studio-grid {
     grid-template-columns: 190px 1fr;
   }
-  .question-list > button:not(.button) {
+  .question-list-row {
     display: flex;
     width: 100%;
     max-width: none;
@@ -3580,7 +3580,7 @@ label small {
   .question-list {
     padding: 16px;
   }
-  .question-list > button:not(.button) {
+  .question-list-row {
     display: inline-flex;
     width: auto;
     max-width: 160px;
@@ -4026,4 +4026,21 @@ label small {
   .hero {
     padding-bottom: 45px;
   }
+}
+
+.question-list-row {
+  padding: 0;
+}
+.question-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 12px 8px;
+  flex: 1;
+  min-width: 0;
+}
+.question-list-row .question-delete {
+  flex-shrink: 0;
+  margin-right: 4px;
 }

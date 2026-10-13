@@ -104,6 +104,21 @@ export function Studio({
   };
   const list = quiz?.questions || [];
   const question = list[selected];
+  const correctOption =
+    question?.correctOption ??
+    (question?.accepted.length
+      ? question.options.indexOf(question.accepted[0])
+      : -1);
+  function removeQuestion(index: number) {
+    const remaining = list.filter((_, i) => i !== index);
+    const currentIndex = remaining.findIndex((q) => q.id === question?.id);
+    change({ questions: remaining });
+    setSelected(
+      currentIndex >= 0
+        ? currentIndex
+        : Math.max(0, Math.min(index, remaining.length - 1)),
+    );
+  }
   const update = (patch: Partial<Question>) =>
     change({
       questions: list.map((q, i) => (i === selected ? { ...q, ...patch } : q)),
@@ -195,15 +210,26 @@ export function Studio({
               Questions <span>{list.length}</span>
             </h3>
             {list.map((q, i) => (
-              <button
+              <div
                 key={q.id}
-                className={selected === i ? "active" : ""}
-                onClick={() => setSelected(i)}
+                className={`question-list-row ${selected === i ? "active" : ""}`}
               >
-                <GripVertical size={14} />
-                <b>{i + 1}</b>
-                <span>{q.prompt || "Untitled question"}</span>
-              </button>
+                <button
+                  className="question-select"
+                  onClick={() => setSelected(i)}
+                >
+                  <GripVertical size={14} />
+                  <b>{i + 1}</b>
+                  <span>{q.prompt || "Untitled question"}</span>
+                </button>
+                <button
+                  className="icon-btn danger question-delete"
+                  aria-label={`Delete question ${i + 1}`}
+                  onClick={() => removeQuestion(i)}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             ))}
             <Button
               variant="outline"
@@ -336,12 +362,7 @@ export function Studio({
                     <button
                       className="icon-btn danger"
                       aria-label="Delete question"
-                      onClick={() => {
-                        change({
-                          questions: list.filter((_, i) => i !== selected),
-                        });
-                        setSelected(Math.max(0, selected - 1));
-                      }}
+                      onClick={() => removeQuestion(selected)}
                     >
                       <Trash2 size={17} />
                     </button>
@@ -363,6 +384,7 @@ export function Studio({
                                 ? ["", "", "", ""]
                                 : [],
                           accepted: [],
+                          correctOption: null,
                         });
                       }}
                     >
@@ -399,27 +421,33 @@ export function Studio({
                       Answer options{" "}
                       <span className="muted">Select the correct answer</span>
                     </label>
+                    <p>
+                      Type the answer text into each field, then select the
+                      circle beside the correct answer.
+                    </p>
                     {question.options.map((option, i) => (
                       <div className="option-edit" key={i}>
                         <input
                           type="radio"
                           aria-label={`Mark option ${i + 1} correct`}
-                          name="correct"
-                          checked={!!option && question.accepted[0] === option}
-                          onChange={() => update({ accepted: [option] })}
+                          name={`correct-${question.id}`}
+                          checked={correctOption === i}
+                          onChange={() =>
+                            update({ accepted: [option], correctOption: i })
+                          }
                         />
                         <input
                           aria-label={`Option ${i + 1}`}
                           value={option}
                           readOnly={question.type === "boolean"}
-                          placeholder={`Option ${i + 1}`}
+                          placeholder={`Enter answer option ${String.fromCharCode(65 + i)}`}
                           onChange={(e) =>
                             update({
                               options: question.options.map((x, n) =>
                                 i === n ? e.target.value : x,
                               ),
                               accepted:
-                                question.accepted[0] === option
+                                correctOption === i
                                   ? [e.target.value]
                                   : question.accepted,
                             })
@@ -436,9 +464,15 @@ export function Studio({
                                   (_, n) => n !== i,
                                 ),
                                 accepted:
-                                  question.accepted[0] === option
-                                    ? []
-                                    : question.accepted,
+                                  correctOption === i ? [] : question.accepted,
+                                correctOption:
+                                  correctOption === i
+                                    ? null
+                                    : correctOption > i
+                                      ? correctOption - 1
+                                      : correctOption >= 0
+                                        ? correctOption
+                                        : null,
                               })
                             }
                           >
