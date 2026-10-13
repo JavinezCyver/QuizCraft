@@ -114,6 +114,30 @@ for (const width of [320, 390, 768, 1024]) {
         name: "Flashcards",
         exact: true,
       });
+      const categoryFilter = page.getByRole("combobox", {
+        name: "Flashcard category",
+      });
+      await categoryFilter.tap();
+      const categoryMenu = page.getByRole("listbox");
+      await expect(categoryMenu).toBeInViewport({ ratio: 1 });
+      expect((await categoryMenu.boundingBox())!.width).toBeLessThanOrEqual(
+        width - 24,
+      );
+      expect(
+        await categoryMenu.evaluate(
+          (el) => getComputedStyle(el).backgroundColor,
+        ),
+      ).not.toBe("rgba(0, 0, 0, 0)");
+      await categoryMenu.press("End");
+      await expect(
+        page.getByRole("option", { name: "General Knowledge", exact: true }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/category-menu-${width}.png`,
+        animations: "disabled",
+      });
+      await categoryMenu.press("Escape");
+      await expect(categoryFilter).toBeFocused();
       expect((await study.boundingBox())!.height).toBeGreaterThanOrEqual(44);
       await study.tap();
       await expect(

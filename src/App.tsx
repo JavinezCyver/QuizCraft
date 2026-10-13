@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "./components/ui/button";
+import { Select } from "./components/ui/select";
 import { Dialog } from "./components/ui/dialog";
 import { Studio } from "./components/Studio";
 import { Player } from "./components/Player";
@@ -234,6 +235,8 @@ export default function App() {
     [loadError, setLoadError] = useState(""),
     [search, setSearch] = useState(""),
     [category, setCategory] = useState("All topics"),
+    [studyCategory, setStudyCategory] = useState("All categories"),
+    [studySort, setStudySort] = useState("recent"),
     [difficulty, setDifficulty] = useState("All levels"),
     [sort, setSort] = useState("popular"),
     [showAll, setShowAll] = useState(false),
@@ -456,6 +459,17 @@ export default function App() {
       50,
     );
   };
+  const studyQuizzes = library.quizzes
+    .filter(
+      (q) =>
+        (studyCategory === "All categories" || q.category === studyCategory) &&
+        (!["draft", "published"].includes(sort) || q.status === sort),
+    )
+    .sort((a, b) =>
+      studySort === "category"
+        ? a.category.localeCompare(b.category) || a.title.localeCompare(b.title)
+        : String(b.created || "").localeCompare(String(a.created || "")),
+    );
   const cards = (items: Quiz[], editable = false) => (
     <div className="quiz-grid">
       {items.map((q) => (
@@ -694,7 +708,7 @@ export default function App() {
             />
           ) : view === "flashcards" && activeQuiz ? (
             <>
-              {cards(library.quizzes, true)}
+              {cards(studyQuizzes, true)}
               <Flashcards
                 key={activeQuiz.id}
                 quizId={activeQuiz.id}
@@ -877,16 +891,17 @@ export default function App() {
                   </div>
                   <label className="select-control">
                     <span className="sr-only">Difficulty</span>
-                    <select
+                    <Select
+                      label="Difficulty"
                       value={difficulty}
-                      onChange={(e) => setDifficulty(e.target.value)}
-                    >
-                      {["All levels", "Easy", "Intermediate", "Advanced"].map(
-                        (l) => (
-                          <option key={l}>{l}</option>
-                        ),
-                      )}
-                    </select>
+                      onChange={setDifficulty}
+                      options={[
+                        "All levels",
+                        "Easy",
+                        "Intermediate",
+                        "Advanced",
+                      ].map((value) => ({ value, label: value }))}
+                    />
                   </label>
                 </div>
                 <div className="category-tabs">
@@ -923,13 +938,17 @@ export default function App() {
                   </h3>
                   <label className="sort-control">
                     Sort by:{" "}
-                    <select
-                      value={sort}
-                      onChange={(e) => setSort(e.target.value)}
-                    >
-                      <option value="popular">Most popular</option>
-                      <option value="newest">Newest first</option>
-                    </select>
+                    <Select
+                      label="Sort quizzes"
+                      value={
+                        ["popular", "newest"].includes(sort) ? sort : "popular"
+                      }
+                      onChange={setSort}
+                      options={[
+                        { value: "popular", label: "Most popular" },
+                        { value: "newest", label: "Newest first" },
+                      ]}
+                    />
                   </label>
                 </div>
                 {loading ? (
@@ -1367,6 +1386,36 @@ export default function App() {
               )}
               {view === "quizzes" && (
                 <>
+                  <div className="study-library-controls">
+                    <label>
+                      Category
+                      <Select
+                        label="Flashcard category"
+                        value={studyCategory}
+                        onChange={setStudyCategory}
+                        options={["All categories", ...categories].map(
+                          (value) => ({ value, label: value }),
+                        )}
+                      />
+                    </label>
+                    <label>
+                      Sort by
+                      <Select
+                        label="Sort flashcard decks"
+                        value={studySort}
+                        onChange={setStudySort}
+                        options={[
+                          { value: "recent", label: "Recently created" },
+                          { value: "category", label: "Category (A-Z)" },
+                        ]}
+                      />
+                    </label>
+                    <span role="status">
+                      {studyQuizzes.length}{" "}
+                      {studyQuizzes.length === 1 ? "quiz" : "quizzes"} · Open
+                      Flashcards to study
+                    </span>
+                  </div>
                   <div className="category-tabs">
                     <button
                       className={
@@ -1389,15 +1438,18 @@ export default function App() {
                       Published
                     </button>
                   </div>
-                  {library.quizzes.length ? (
-                    cards(
-                      library.quizzes.filter(
-                        (q) =>
-                          !["draft", "published"].includes(sort) ||
-                          q.status === sort,
-                      ),
-                      true,
-                    )
+                  {studyQuizzes.length ? (
+                    cards(studyQuizzes, true)
+                  ) : library.quizzes.length ? (
+                    <Empty
+                      title="No quizzes match your filters"
+                      text="Choose another category or show all quizzes to find a flashcard deck."
+                      action={() => {
+                        setStudyCategory("All categories");
+                        setSort("popular");
+                      }}
+                      label="Clear filters"
+                    />
                   ) : (
                     <Empty
                       title="Your ideas deserve a quiz"
@@ -1406,7 +1458,7 @@ export default function App() {
                       label="Create a quiz"
                     />
                   )}
-                  {library.quizzes.map((q) => (
+                  {studyQuizzes.map((q) => (
                     <div className="quiz-manage-row" key={q.id}>
                       <b>{q.title}</b>
                       <span className="pill">{q.visibility}</span>

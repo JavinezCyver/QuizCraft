@@ -1,5 +1,85 @@
 import { test, expect } from "@playwright/test";
 
+test("flashcard decks filter and sort by category on mobile", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.request.post("/api/auth/register", {
+    data: {
+      email: `categories-${Date.now()}@example.test`,
+      name: "Study categories",
+      password: "flashcard-password",
+    },
+  });
+  for (const [title, category] of [
+    ["Coding practice", "Technology"],
+    ["Plant science", "Science"],
+  ]) {
+    const { id } = await (
+      await page.request.post("/api/quizzes", { data: {} })
+    ).json();
+    const quiz = await (await page.request.get("/api/quizzes/" + id)).json();
+    await page.request.put("/api/quizzes/" + id, {
+      data: {
+        ...quiz,
+        title,
+        category,
+        questions: [
+          {
+            type: "blank",
+            prompt: `${category} question`,
+            options: [],
+            accepted: ["Answer"],
+            points: 10,
+          },
+        ],
+      },
+    });
+  }
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Open navigation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "My quizzes", exact: true }).click();
+  const titles = page.locator(".quiz-card .card-title");
+  await page.getByRole("combobox", { name: "Sort flashcard decks" }).click();
+  await page.getByRole("option", { name: "Category (A-Z)" }).click();
+  await expect(titles).toHaveText(["Plant science", "Coding practice"]);
+  await page.getByRole("combobox", { name: "Flashcard category" }).click();
+  await page.getByRole("option", { name: "Science", exact: true }).click();
+  await expect(titles).toHaveText(["Plant science"]);
+  await expect(page.locator(".quiz-manage-row")).toHaveCount(1);
+  await page.getByRole("button", { name: "Flashcards", exact: true }).click();
+  await expect(
+    page.getByRole("button", {
+      name: "Reveal answer: Science question",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("combobox", { name: "Flashcard category" }),
+  ).toHaveText("Science");
+  await page.getByRole("button", { name: "Published", exact: true }).click();
+  await expect(
+    page.getByText("No quizzes match your filters", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Clear filters", exact: true })
+    .click();
+  await expect(titles).toHaveText(["Plant science", "Coding practice"]);
+  await page.getByRole("combobox", { name: "Flashcard category" }).click();
+  await page.getByRole("option", { name: "Mathematics", exact: true }).click();
+  await expect(
+    page.getByText("No quizzes match your filters", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - innerWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+});
+
 test("flashcards flip, swipe, navigate by keyboard and stay out of history", async ({
   page,
 }) => {

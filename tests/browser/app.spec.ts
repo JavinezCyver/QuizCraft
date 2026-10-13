@@ -21,6 +21,39 @@ for (const width of [320, 375, 768, 1440]) {
       path: `test-results/discovery-${width}.png`,
       fullPage: true,
     });
+    if (width === 375) {
+      await page.evaluate(() => {
+        localStorage.setItem("quizcraft-theme", "dark");
+      });
+      await page.reload();
+    }
+    const difficulty = page.getByRole("combobox", {
+      name: "Difficulty",
+      exact: true,
+    });
+    await difficulty.click();
+    await expect(page.getByRole("listbox")).toBeInViewport({ ratio: 1 });
+    await page
+      .getByRole("option", { name: "Intermediate", exact: true })
+      .click();
+    await expect(difficulty).toHaveText("Intermediate");
+    await difficulty.click();
+    await page.getByRole("option", { name: "All levels", exact: true }).click();
+    const quizSort = page.getByRole("combobox", {
+      name: "Sort quizzes",
+      exact: true,
+    });
+    await quizSort.click();
+    await expect(page.getByRole("listbox")).toBeInViewport({ ratio: 1 });
+    await page.getByRole("listbox").press("End");
+    await expect(page.getByRole("option", { name: "Newest first", exact: true })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(quizSort).toHaveText("Newest first");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - innerWidth,
+      ),
+    ).toBeLessThanOrEqual(1);
     await page.getByRole("textbox", { name: "Search quizzes" }).fill("cosmos");
     await expect(
       page.getByRole("button", {
