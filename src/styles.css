@@ -287,6 +287,11 @@ select {
   border-radius: 4px;
   margin-left: auto;
 }
+.dark .nav-count,
+.dark .new-tag {
+  background: var(--purple-soft);
+  color: var(--purple);
+}
 .sidebar-bottom {
   margin-top: auto;
   padding-top: 50px;
@@ -4883,5 +4888,158 @@ p,
   .select-control {
     width: 100%;
     flex-basis: 100%;
+  }
+}
+.custom-category-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+}
+.custom-category-row label {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.custom-category-row input {
+  margin-bottom: 0;
+}
+.custom-category-row > .button {
+  flex-shrink: 0;
+  min-height: 44px;
+}
+@media (max-width: 600px) {
+  .custom-category-row {
+    flex-wrap: wrap;
+  }
+  .custom-category-row label {
+    flex-basis: 100%;
+  }
+}
+.category-select-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.category-select-row .themed-select-trigger {
+  flex: 1;
+  margin-top: 0;
+}
+.category-select-row > .icon-btn {
+  flex: 0 0 44px;
+  min-height: 44px;
+  margin: 0;
+}
+.category-select-row > .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Keep real user content inside every layout, including tablet landscape. */
+.leader-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.leader-row > b,
+.leader-row > strong,
+.leader-row > small {
+  flex-shrink: 0;
+}
+.history-table-row > div,
+.activity-row > div {
+  min-width: 0;
+}
+.history-table-row b {
+  overflow-wrap: anywhere;
+}
+.cover-category,
+.intro-cover > .pill {
+  max-width: calc(100% - 32px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.quiz-tools {
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.dialog-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.dialog-heading > .icon-btn {
+  flex-shrink: 0;
+}
+.sidebar > * {
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .leader-row {
+    gap: 10px;
+    font-size: 12px;
+  }
+  .sidebar {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    overscroll-behavior: contain;
+  }
+}
+.activity-row > .button-row {
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .activity-row > .button-row {
+    flex-basis: 100%;
+  }
+}
+.card-footer {
+  gap: 12px;
+}
+.creator {
+  min-width: 0;
+  flex: 1;
+}
+.creator > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.creator .mini-avatar,
+.card-footer .plays {
+  flex-shrink: 0;
+}
+.recent-card small {
+  overflow-wrap: anywhere;
+}
+/* Show every history detail on phones without squeezing a four-column table. */
+@media (max-width: 760px) {
+  .history-table-head {
+    display: none;
+  }
+  .history-table-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 10px;
+    font-size: 12px;
+  }
+  .history-table-row > div {
+    grid-column: 1 / -1;
+  }
+  .history-table-row b {
+    font-size: 13px;
+  }
+  .history-table-row small {
+    font-size: 11px;
+  }
+  .history-table-row > [data-label] {
+    display: block;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .history-table-row > [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 500;
+    margin-bottom: 5px;
   }
 }

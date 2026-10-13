@@ -13,7 +13,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: "node server/index.mjs",
+    command: "node tests/browser/server.mjs",
     port: 3003,
     reuseExistingServer: false,
     env: {

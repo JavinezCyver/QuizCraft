@@ -12,7 +12,7 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-Open **http://localhost:5173**. Vite proxies `/api` to port 3001. Register a new account through the interface. The eight seeded quizzes are explicitly labeled **Demo**; they have no fabricated user activity or scores.
+Open **http://localhost:5173**. Vite proxies `/api` to port 3001. Register a new account through the interface. Discover shows public quizzes published by users. Generated examples are not created on startup, and legacy demo quizzes are excluded from discovery. Creators can add custom categories in the editor, such as Anatomy, Nursing, or Pharmacology; categories are saved with quizzes and appear in the relevant discovery and flashcard filters. The trash icon beside the editor category selector removes a category from your own quizzes and moves them to Uncategorized, preserving their questions and scores.
 
 ## Included
 
@@ -26,7 +26,7 @@ Open **http://localhost:5173**. Vite proxies `/api` to port 3001. Register a new
 - Optional Flashcards on owned quiz cards: tap to reveal answers and explanations, swipe left for the next question or right for the previous one, with a brief flip animation between cards, use arrow buttons/keys, and restart a deck. Flashcards open in a focused overlay above a blurred library on every screen size. Background controls are inactive, keyboard focus stays in study mode, and Escape or Back closes it. Long answers scroll inside the card. Study sessions never create quiz attempts, scores, history or leaderboard entries. Missing answers point back to the editor.
 - Reporting, administrator-only platform statistics and moderation with hide/resolve actions.
 
-Published quiz edits preserve the historical question versions and settings used by earlier attempts. All draft attempts count as previews, including runs opened from Saved quizzes, and never appear in history or rankings. Owners can delete quizzes from My quizzes after confirmation. Deletion removes them from libraries, discovery and saved collections, disables share links, and removes the creator’s own attempts from history. Other participants’ published scores remain in their history. Existing draft runs and creator runs of deleted quizzes are corrected automatically when the server starts.
+Published quiz edits preserve the historical question versions and settings used by earlier attempts. All draft attempts count as previews, including runs opened from Saved quizzes, and never appear in history or rankings. Owners can delete quizzes from My quizzes after confirmation. Deletion removes them from libraries, discovery and saved collections, disables share links, and removes the quiz's attempts from everyone's visible history and dashboard activity. Legacy generated demo attempts are excluded too. Existing draft runs and creator runs of deleted quizzes are corrected automatically when the server starts.
 
 ## Environment
 
@@ -73,7 +73,7 @@ npm run test:e2e
 
 API tests use a separate temporary database and port 3002. Browser tests launch an isolated production server on port 3003 with a separate database and use an installed Chrome at the Windows default path. Set `CHROME_PATH` to your Chrome executable on another system. Tests exercise desktop/tablet/mobile layouts, account creation, studio preview/publishing, bookmarks, guest quiz completion, dark mode, keyboard dialog dismissal, ownership, answer protection, grading, duplicate submission, timer expiry, private/unlisted access and moderation.
 
-Responsive workflow tests cover 320, 390, 768, and 1024px touch viewports, including long content, flashcard flipping, horizontal swipes, vertical answer scrolling, draft editing, timed quiz completion, and results. Discovery is also checked at 375 and 1440px.
+Responsive workflow tests cover 320, 390, 768, and 1024px touch viewports, including long content, flashcard flipping, horizontal swipes, vertical answer scrolling, draft editing, timed quiz completion, and results. Discovery is also checked at 375 and 1440px. Additional layout checks cover 320x568, 568x320, 812x375, 768x1024, 1024x768, and 1440x900, including populated history, saved quizzes, achievements, profile dialogs, leaderboards, long custom categories and names, all-question layouts, and administration reports.
 
 ## Deploy
 

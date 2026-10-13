@@ -9,10 +9,8 @@ import {
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { db, all, get, run } from "./db.mjs";
-import { seed } from "./seed.mjs";
 import { grade, shuffle } from "./scoring.mjs";
 import { isAllowedOrigin } from "./origin.mjs";
-seed();
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
@@ -264,10 +262,32 @@ app.patch("/api/profile", auth, (req, res) => {
   );
   res.json(publicUser(get("SELECT * FROM users WHERE id=?", req.user.id)));
 });
+app.get("/api/categories", (req, res) =>
+  res.json(
+    all(
+      "SELECT DISTINCT category FROM quizzes WHERE demo=0 AND owner IS NOT NULL AND status!='deleted' AND ((status='published' AND visibility='public') OR owner=?) ORDER BY category COLLATE NOCASE",
+      req.user?.id || "",
+    ).map((row) => row.category),
+  ),
+);
+app.delete("/api/categories", auth, (req, res) => {
+  const name =
+    typeof req.body.name === "string"
+      ? req.body.name.trim().replace(/\s+/g, " ")
+      : "";
+  if (!name || name.length > 60 || name === "Uncategorized")
+    return res.status(400).json({ error: "Choose a category to delete." });
+  const result = run(
+    "UPDATE quizzes SET category='Uncategorized' WHERE owner=? AND category=? AND status!='deleted' AND demo=0",
+    req.user.id,
+    name,
+  );
+  res.json({ ok: true, updated: Number(result.changes) });
+});
 app.get("/api/quizzes", (req, res) =>
   res.json(
     all(
-      `SELECT q.*,COALESCE(u.name,'QuizCraft Studio') creator,(SELECT COUNT(*) FROM questions WHERE quiz_id=q.id AND active=1) questionCount,(SELECT COUNT(*) FROM attempts WHERE quiz_id=q.id AND submitted IS NOT NULL AND preview=0) plays FROM quizzes q LEFT JOIN users u ON q.owner=u.id WHERE q.status='published' AND q.visibility='public' ORDER BY q.created DESC`,
+      `SELECT q.*,u.name creator,(SELECT COUNT(*) FROM questions WHERE quiz_id=q.id AND active=1) questionCount,(SELECT COUNT(*) FROM attempts WHERE quiz_id=q.id AND submitted IS NOT NULL AND preview=0) plays FROM quizzes q JOIN users u ON q.owner=u.id WHERE q.demo=0 AND q.status='published' AND q.visibility='public' ORDER BY q.created DESC`,
     ).map(parse),
   ),
 );
@@ -287,7 +307,7 @@ app.get("/api/library", auth, (req, res) =>
       req.user.id,
     ).map(parse),
     attempts: all(
-      "SELECT a.id,a.quiz_id,a.name,a.score,a.maximum,a.correct,a.submitted,a.started,a.pending,q.title FROM attempts a JOIN quizzes q ON q.id=a.quiz_id WHERE user_id=? AND submitted IS NOT NULL AND preview=0 ORDER BY submitted DESC",
+      "SELECT a.id,a.quiz_id,a.name,a.score,a.maximum,a.correct,a.submitted,a.started,a.pending,q.title FROM attempts a JOIN quizzes q ON q.id=a.quiz_id WHERE a.user_id=? AND a.submitted IS NOT NULL AND a.preview=0 AND q.status!='deleted' AND q.demo=0 ORDER BY a.submitted DESC,a.started DESC,a.rowid DESC",
       req.user.id,
     ),
   }),
@@ -309,17 +329,12 @@ function validate(q, publish) {
   if (typeof q.title !== "string" || !q.title.trim() || q.title.length > 140)
     return "A quiz title is required (up to 140 characters).";
   if (
-    ![
-      "Education",
-      "Science",
-      "Mathematics",
-      "Technology",
-      "History",
-      "Entertainment",
-      "General Knowledge",
-    ].includes(q.category)
+    typeof q.category !== "string" ||
+    !q.category.trim() ||
+    q.category.trim().length > 60 ||
+    /[\u0000-\u001f\u007f]/.test(q.category)
   )
-    return "Choose a category.";
+    return "Enter a category from 1 to 60 characters.";
   if (!["public", "unlisted", "private"].includes(q.visibility))
     return "Choose a valid visibility.";
   if (!["Easy", "Intermediate", "Advanced"].includes(q.difficulty))
@@ -412,7 +427,7 @@ app.put("/api/quizzes/:id", auth, (req, res) => {
       "UPDATE quizzes SET title=?,description=?,category=?,difficulty=?,theme=?,cover=?,visibility=?,status=?,settings=? WHERE id=?",
       q.title,
       q.description || "",
-      q.category,
+      q.category.trim().replace(/\s+/g, " "),
       q.difficulty,
       q.theme || "purple",
       /^https:\/\//.test(q.cover || "") ? q.cover : "",
@@ -452,7 +467,7 @@ app.delete("/api/quizzes/:id", auth, (req, res) => {
     return res
       .status(403)
       .json({ error: "You can delete only your own quizzes." });
-  // Retain versioned questions and completed scores for participants' history.
+  // Retain versioned records for integrity; deleted quizzes are excluded from history.
   // Removing discoverability and bookmarks also revokes access for the owner.
   db.exec("BEGIN");
   try {
@@ -535,11 +550,9 @@ app.post("/api/quizzes/:id/start", (req, res) => {
         question.options.some((option) => !option.trim())),
   );
   if (emptyChoices >= 0)
-    return res
-      .status(400)
-      .json({
-        error: `Question ${emptyChoices + 1} has empty answer choices. Open Edit quiz and enter text for every answer option before starting.`,
-      });
+    return res.status(400).json({
+      error: `Question ${emptyChoices + 1} has empty answer choices. Open Edit quiz and enter text for every answer option before starting.`,
+    });
   if (s.randomQuestions) qs = shuffle(qs);
   const id = secret(),
     started = Date.now(),

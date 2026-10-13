@@ -48,14 +48,7 @@ import { Dialog } from "./components/ui/dialog";
 import { Studio } from "./components/Studio";
 import { Player } from "./components/Player";
 import { Flashcards } from "./components/Flashcards";
-import {
-  api,
-  categories,
-  share,
-  type Quiz,
-  type User,
-  type Library,
-} from "./lib/api";
+import { api, share, type Quiz, type User, type Library } from "./lib/api";
 const categoryIcons: Record<string, LucideIcon> = {
   Education: GraduationCap,
   Science: Atom,
@@ -459,6 +452,12 @@ export default function App() {
       50,
     );
   };
+  const discoverCategories = Array.from(
+    new Set(quizzes.map((q) => q.category)),
+  ).sort((a, b) => a.localeCompare(b));
+  const categories = Array.from(
+    new Set(library.quizzes.map((q) => q.category)),
+  ).sort((a, b) => a.localeCompare(b));
   const studyQuizzes = library.quizzes
     .filter(
       (q) =>
@@ -499,6 +498,12 @@ export default function App() {
       ))}
     </div>
   );
+  const seenQuizzes = new Set<string>();
+  const quizHistory = library.attempts.filter((attempt) => {
+    if (seenQuizzes.has(attempt.quiz_id)) return false;
+    seenQuizzes.add(attempt.quiz_id);
+    return true;
+  });
   const totalAttempts = library.attempts.length,
     average = totalAttempts
       ? Math.round(
@@ -508,6 +513,7 @@ export default function App() {
           ) / totalAttempts,
         )
       : 0;
+  const showCreateQuiz = !["dashboard", "bookmarks", "history"].includes(view);
   const title =
     view === "bookmarks"
       ? "Your next discoveries"
@@ -581,20 +587,22 @@ export default function App() {
           </button>
         )}
         <div className="sidebar-bottom">
-          <div className="create-callout">
-            <span className="callout-icon">
-              <Sparkles size={20} />
-            </span>
-            <h3>Got a great question?</h3>
-            <p>
-              Turn what you know into
-              <br />
-              something worth sharing.
-            </p>
-            <Button size="sm" onClick={createQuiz}>
-              <Plus size={16} /> Create a quiz
-            </Button>
-          </div>
+          {showCreateQuiz && (
+            <div className="create-callout">
+              <span className="callout-icon">
+                <Sparkles size={20} />
+              </span>
+              <h3>Got a great question?</h3>
+              <p>
+                Turn what you know into
+                <br />
+                something worth sharing.
+              </p>
+              <Button size="sm" onClick={createQuiz}>
+                <Plus size={16} /> Create a quiz
+              </Button>
+            </div>
+          )}
           <button className="theme-toggle" onClick={() => setDark(!dark)}>
             {dark ? <Sun size={17} /> : <Moon size={17} />}
             <span>{dark ? "Light mode" : "Dark mode"}</span>
@@ -680,11 +688,13 @@ export default function App() {
                 Log in
               </button>
             )}
-            <Button size="sm" onClick={createQuiz} aria-label="Create a Quiz">
-              <Plus size={16} />
-              <span className="create-label-full">Create a Quiz</span>
-              <span className="create-label-mobile">Create</span>
-            </Button>
+            {showCreateQuiz && view !== "quizzes" && (
+              <Button size="sm" onClick={createQuiz} aria-label="Create a Quiz">
+                <Plus size={16} />
+                <span className="create-label-full">Create a Quiz</span>
+                <span className="create-label-mobile">Create</span>
+              </Button>
+            )}
           </div>
         </header>
         <main>
@@ -912,8 +922,8 @@ export default function App() {
                     <Compass size={15} />
                     All topics
                   </button>
-                  {categories.map((c) => {
-                    const Icon = categoryIcons[c];
+                  {discoverCategories.map((c) => {
+                    const Icon = categoryIcons[c] || BookOpen;
                     return (
                       <button
                         key={c}
@@ -971,6 +981,13 @@ export default function App() {
                   cards(
                     filtered.slice(0, showAll || search ? filtered.length : 6),
                   )
+                ) : !quizzes.length ? (
+                  <Empty
+                    title="No quizzes published yet"
+                    text="Publish a public quiz to share it with the community. Your drafts stay in My quizzes."
+                    action={createQuiz}
+                    label="Create a quiz"
+                  />
                 ) : (
                   <div className="empty-state panel">
                     <Search size={34} />
@@ -1013,7 +1030,7 @@ export default function App() {
                     )
                     .slice(0, 3)
                     .map((q) => {
-                      const Icon = categoryIcons[q.category];
+                      const Icon = categoryIcons[q.category] || BookOpen;
                       return (
                         <button
                           className="recent-card"
@@ -1244,9 +1261,11 @@ export default function App() {
                           : "Every attempt brings a new perspective."}
                   </p>
                 </div>
-                <Button onClick={createQuiz}>
-                  <Plus size={16} /> Create a quiz
-                </Button>
+                {showCreateQuiz && (
+                  <Button onClick={createQuiz}>
+                    <Plus size={16} /> Create a quiz
+                  </Button>
+                )}
               </div>
               {view === "dashboard" && (
                 <>
@@ -1554,7 +1573,7 @@ export default function App() {
                   />
                 ))}
               {view === "history" &&
-                (totalAttempts ? (
+                (quizHistory.length ? (
                   <div className="panel history-table">
                     <div className="history-table-head">
                       <span>Quiz</span>
@@ -1562,7 +1581,7 @@ export default function App() {
                       <span>Time</span>
                       <span>Date</span>
                     </div>
-                    {library.attempts.map((a) => (
+                    {quizHistory.map((a) => (
                       <div className="history-table-row" key={a.id}>
                         <div>
                           <b>{a.title}</b>
@@ -1574,15 +1593,18 @@ export default function App() {
                                 : "Completed"}
                           </small>
                         </div>
-                        <strong>
+                        <strong data-label="Score">
                           {Math.round((a.score / a.maximum) * 100)}%
                         </strong>
-                        <span>
+                        <span data-label="Time">
                           {Math.round((a.submitted - a.started) / 1000)}s
                         </span>
-                        <span>
+                        <time
+                          data-label="Date"
+                          dateTime={new Date(a.submitted).toISOString()}
+                        >
                           {new Date(a.submitted).toLocaleDateString()}
-                        </span>
+                        </time>
                       </div>
                     ))}
                   </div>
@@ -1818,9 +1840,8 @@ export default function App() {
       >
         <p>
           “{deleteTarget?.title}” will be removed from your quizzes, discovery,
-          and saved collections. Its share link will stop working. Your own
-          attempts will be removed from history. Other participants’ completed
-          scores are kept.
+          and saved collections. Its share link will stop working. Attempts for
+          this quiz will also be removed from quiz history.
         </p>
         {deleteError && (
           <div className="alert" role="alert">

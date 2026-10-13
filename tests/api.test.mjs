@@ -27,6 +27,9 @@ async function request(path, { method = "GET", body, cookie, headers } = {}) {
     cookie: response.headers.get("set-cookie")?.split(";")[0],
   };
 }
+test("new installations do not generate discovery quizzes", async () => {
+  assert.deepEqual((await request("/quizzes")).data, []);
+});
 before(async () => {
   mailServer = createServer((req, res) => {
     let body = "";
@@ -551,7 +554,7 @@ test("drafts opened from Saved quizzes never enter history and legacy runs are r
     ),
   );
 });
-test("only owners can delete quizzes; links and bookmarks disappear while history survives", async () => {
+test("only owners can delete quizzes; links, bookmarks and quiz history disappear", async () => {
   const selfAttempt = (
     await request("/quizzes/" + quizId + "/start", {
       method: "POST",
@@ -623,7 +626,10 @@ test("only owners can delete quizzes; links and bookmarks disappear while histor
   assert.ok(!ownerLibrary.quizzes.some((q) => q.id === quizId));
   assert.ok(!ownerLibrary.attempts.some((a) => a.quiz_id === quizId));
   assert.ok(!otherLibrary.bookmarks.includes(quizId));
-  assert.deepEqual(otherLibrary.attempts, historyBefore);
+  assert.deepEqual(
+    otherLibrary.attempts,
+    historyBefore.filter((a) => a.quiz_id !== quizId),
+  );
   assert.equal(
     (
       await request("/quizzes/" + quizId, {
@@ -700,4 +706,163 @@ test("password reset sends a single-use link and revokes sessions", async () => 
 test("logout revokes session", async () => {
   await request("/auth/logout", { method: "POST", cookie: otherCookie });
   assert.equal((await request("/me", { cookie: otherCookie })).data, null);
+});
+
+test("custom medical categories save, publish and respect category privacy", async () => {
+  const registered = await request("/auth/register", {
+    method: "POST",
+    body: {
+      email: "medical@example.test",
+      name: "Medical creator",
+      password: "medical-password",
+    },
+  });
+  const cookie = registered.cookie;
+  const id = (await request("/quizzes", { method: "POST", cookie, body: {} }))
+    .data.id;
+  const draft = quiz({
+    category: "  Clinical Pharmacology  ",
+    status: "draft",
+    visibility: "private",
+  });
+  assert.equal(
+    (await request("/quizzes/" + id, { method: "PUT", cookie, body: draft }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await request("/quizzes/" + id, { cookie })).data.category,
+    "Clinical Pharmacology",
+  );
+  assert.ok(
+    (await request("/categories", { cookie })).data.includes(
+      "Clinical Pharmacology",
+    ),
+  );
+  assert.ok(
+    !(await request("/categories")).data.includes("Clinical Pharmacology"),
+  );
+  assert.ok(!(await request("/quizzes")).data.some((q) => q.id === id));
+  for (const category of ["", " ".repeat(4), "A".repeat(61), "Bad\nCategory"]) {
+    assert.equal(
+      (
+        await request("/quizzes/" + id, {
+          method: "PUT",
+          cookie,
+          body: { ...draft, category },
+        })
+      ).status,
+      400,
+    );
+  }
+  assert.equal(
+    (
+      await request("/quizzes/" + id, {
+        method: "PUT",
+        cookie,
+        body: { ...draft, status: "published", visibility: "public" },
+      })
+    ).status,
+    200,
+  );
+  assert.ok(
+    (await request("/quizzes")).data.some(
+      (q) => q.id === id && q.category === "Clinical Pharmacology",
+    ),
+  );
+  assert.ok(
+    (await request("/categories")).data.includes("Clinical Pharmacology"),
+  );
+  const db = new DatabaseSync(database);
+  db.prepare(
+    "INSERT INTO quizzes(id,owner,title,category,status,visibility,demo) VALUES(?,?,?,?,?,?,1)",
+  ).run(
+    "legacy-demo",
+    registered.data.id,
+    "Generated example",
+    "Demo-only subject",
+    "published",
+    "public",
+  );
+  db.close();
+  assert.ok(
+    !(await request("/quizzes")).data.some((q) => q.id === "legacy-demo"),
+  );
+  assert.ok(!(await request("/categories")).data.includes("Demo-only subject"));
+});
+
+test("deleting a category keeps quizzes and only affects its creator", async () => {
+  const register = async (email) =>
+    request("/auth/register", {
+      method: "POST",
+      body: { email, name: "Category owner", password: "category-password" },
+    });
+  const owner = await register("category-owner@example.test");
+  const other = await register("category-other@example.test");
+  const create = async (cookie) => {
+    const id = (await request("/quizzes", { method: "POST", cookie, body: {} }))
+      .data.id;
+    await request("/quizzes/" + id, {
+      method: "PUT",
+      cookie,
+      body: quiz({ category: "Anatomy" }),
+    });
+    return id;
+  };
+  const first = await create(owner.cookie),
+    second = await create(owner.cookie),
+    untouched = await create(other.cookie);
+  assert.equal(
+    (
+      await request("/categories", {
+        method: "DELETE",
+        body: { name: "Anatomy" },
+      })
+    ).status,
+    401,
+  );
+  const deleted = await request("/categories", {
+    method: "DELETE",
+    cookie: owner.cookie,
+    body: { name: "Anatomy" },
+  });
+  assert.equal(deleted.status, 200);
+  assert.equal(deleted.data.updated, 2);
+  for (const id of [first, second]) {
+    const kept = (await request("/quizzes/" + id, { cookie: owner.cookie }))
+      .data;
+    assert.equal(kept.category, "Uncategorized");
+    assert.equal(kept.status, "published");
+    assert.equal(kept.questions.length, quiz().questions.length);
+  }
+  assert.equal(
+    (await request("/quizzes/" + untouched, { cookie: other.cookie })).data
+      .category,
+    "Anatomy",
+  );
+  assert.equal(
+    (
+      await request("/categories", {
+        method: "DELETE",
+        cookie: owner.cookie,
+        body: { name: "Uncategorized" },
+      })
+    ).status,
+    400,
+  );
+});
+
+test("legacy generated demo attempts are excluded from history", async () => {
+  const user = (await request("/me", { cookie: ownerCookie })).data;
+  const db = new DatabaseSync(database);
+  db.prepare(
+    "INSERT INTO quizzes(id,title,category,status,demo) VALUES(?,?,?,'published',1)",
+  ).run("demo-history-quiz", "Old generated demo", "Science");
+  db.prepare(
+    "INSERT INTO attempts(id,quiz_id,user_id,name,started,submitted,score,maximum,correct,preview) VALUES(?,?,?,?,1,2,10,10,1,0)",
+  ).run("demo-history-attempt", "demo-history-quiz", user.id, "Legacy learner");
+  db.close();
+  const history = (await request("/library", { cookie: ownerCookie })).data
+    .attempts;
+  assert.ok(!history.some((a) => a.id === "demo-history-attempt"));
 });

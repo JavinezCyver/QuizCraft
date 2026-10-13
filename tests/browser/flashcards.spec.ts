@@ -69,10 +69,15 @@ test("flashcard decks filter and sort by category on mobile", async ({
     .click();
   await expect(titles).toHaveText(["Plant science", "Coding practice"]);
   await page.getByRole("combobox", { name: "Flashcard category" }).click();
-  await page.getByRole("option", { name: "Mathematics", exact: true }).click();
+  await expect(page.getByRole("option")).toHaveText([
+    "All categories",
+    "Science",
+    "Technology",
+  ]);
   await expect(
-    page.getByText("No quizzes match your filters", { exact: true }),
-  ).toBeVisible();
+    page.getByRole("option", { name: "Mathematics", exact: true }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth - innerWidth,
