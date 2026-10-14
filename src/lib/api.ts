@@ -1,3 +1,5 @@
+import { offlineRequest } from "./offline";
+
 export type User = {
   id: string;
   name: string;
@@ -78,18 +80,5 @@ export async function api<T = any>(
   method = "GET",
   body?: unknown,
 ): Promise<T> {
-  const response = await fetch("/api" + path, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "same-origin",
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const data = await response
-    .json()
-    .catch(() => ({ error: "The server could not be reached." }));
-  if (!response.ok) throw new Error(data.error || "Request failed.");
-  return data;
-}
-export function share(id: string) {
-  return `${location.origin}/?quiz=${id}`;
+  return offlineRequest<T>(path, method, body);
 }

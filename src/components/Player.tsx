@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "./ui/button";
-import { api, share, type Quiz, type Question } from "../lib/api";
+import { api, type Quiz, type Question } from "../lib/api";
 type Attempt = {
   id: string;
   quiz: Quiz;
@@ -95,7 +95,7 @@ export function Player({
       (e) => {
         if (!attempt.deadline || Date.now() < attempt.deadline)
           setError(
-            "Your answer could not be saved. Check your connection. " +
+            "Your answer could not be saved. Check your device storage. " +
               e.message,
           );
       },
@@ -127,7 +127,10 @@ export function Player({
   async function submit() {
     if (!attempt || submitted.current) return;
     const expired = attempt.deadline && Date.now() >= attempt.deadline;
-    if (!expired && attempt.questions.some((q) => !answersRef.current[q.id]?.trim())) {
+    if (
+      !expired &&
+      attempt.questions.some((q) => !answersRef.current[q.id]?.trim())
+    ) {
       setError("Answer every question before submitting the quiz.");
       return;
     }
@@ -149,8 +152,10 @@ export function Player({
       setBusy(false);
     }
   }
-  const count = attempt?.questions.filter((q) => answers[q.id]?.trim()).length || 0;
-  const allAnswered = !!attempt?.questions.length && count === attempt.questions.length;
+  const count =
+    attempt?.questions.filter((q) => answers[q.id]?.trim()).length || 0;
+  const allAnswered =
+    !!attempt?.questions.length && count === attempt.questions.length;
   const seconds = attempt?.deadline
     ? Math.max(0, Math.ceil((attempt.deadline - now) / 1000))
     : 0;
@@ -287,7 +292,7 @@ export function Player({
                 onClick={() =>
                   navigator.clipboard
                     .writeText(
-                      `I scored ${Math.round((result.score / result.maximum) * 100)}% on ${quiz.title}! Try it: ${share(quiz.id)}`,
+                      `I scored ${Math.round((result.score / result.maximum) * 100)}% on ${quiz.title}!`,
                     )
                     .then(() => notify("Result copied to clipboard."))
                     .catch(() =>
@@ -404,7 +409,7 @@ export function Player({
                     checked={rank}
                     onChange={(e) => setRank(e.target.checked)}
                   />{" "}
-                  Show my name and score on the public leaderboard
+                  Show my name and score on the device leaderboard
                 </label>
               )}
             <Button onClick={start} disabled={busy}>
@@ -502,15 +507,20 @@ export function Player({
                     </button>
                   ))}
                 </div>
-                {!allAnswered &&
-                displayQuiz.settings.layout !== "all" ? (
+                {!allAnswered && displayQuiz.settings.layout !== "all" ? (
                   <Button
-                    disabled={busy || !answers[attempt.questions[index].id]?.trim()}
-                    onClick={() => setIndex((i) =>
-                      i < attempt.questions.length - 1
-                        ? i + 1
-                        : attempt.questions.findIndex((q) => !answers[q.id]?.trim()),
-                    )}
+                    disabled={
+                      busy || !answers[attempt.questions[index].id]?.trim()
+                    }
+                    onClick={() =>
+                      setIndex((i) =>
+                        i < attempt.questions.length - 1
+                          ? i + 1
+                          : attempt.questions.findIndex(
+                              (q) => !answers[q.id]?.trim(),
+                            ),
+                      )
+                    }
                   >
                     Next question
                     <ArrowRight size={16} />
@@ -539,7 +549,7 @@ export function Player({
         displayQuiz.status !== "draft" && (
           <section className="panel leaderboard">
             <h2>
-              <Trophy size={21} /> The curious minds leaderboard
+              <Trophy size={21} /> Scores on this device
             </h2>
             {leaders.length ? (
               leaders.map((l, i) => (
@@ -551,7 +561,7 @@ export function Player({
                 </div>
               ))
             ) : (
-              <p>No public scores yet. Be the first to set the pace.</p>
+              <p>No saved scores yet. Be the first to set the pace.</p>
             )}
           </section>
         )}

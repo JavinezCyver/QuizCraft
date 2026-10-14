@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/browser",
+  testMatch: ["offline.spec.ts", "mobile-carousel.spec.ts"],
   timeout: 45000,
   workers: 1,
   use: {
@@ -13,7 +14,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: "node tests/browser/server.mjs",
+    command: "npx vite preview --host 127.0.0.1 --port 3003 --strictPort",
     port: 3003,
     reuseExistingServer: false,
     env: {

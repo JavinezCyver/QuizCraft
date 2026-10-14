@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createServer, request as httpRequest } from "node:http";
 import { grade } from "../server/scoring.mjs";
@@ -40,17 +40,26 @@ before(async () => {
     });
   });
   await new Promise((resolve) => mailServer.listen(3004, "127.0.0.1", resolve));
-  server = spawn(process.execPath, ["server/index.mjs"], {
-    env: {
-      ...process.env,
-      PORT: "3002",
-      DATABASE_PATH: database,
-      ADMIN_EMAIL: "owner@example.test",
-      APP_ORIGIN: origin,
-      EMAIL_WEBHOOK_URL: "http://127.0.0.1:3004",
+  server = spawn(
+    resolve(
+      "target/debug",
+      process.platform === "win32"
+        ? "quizcraft-server.exe"
+        : "quizcraft-server",
+    ),
+    [],
+    {
+      env: {
+        ...process.env,
+        PORT: "3002",
+        DATABASE_PATH: database,
+        ADMIN_EMAIL: "owner@example.test",
+        APP_ORIGIN: origin,
+        EMAIL_WEBHOOK_URL: "http://127.0.0.1:3004",
+      },
+      stdio: "pipe",
     },
-    stdio: "pipe",
-  });
+  );
   let log = "";
   server.stderr.on("data", (x) => (log += x));
   for (let i = 0; i < 100; i++) {
@@ -535,8 +544,13 @@ test("drafts opened from Saved quizzes never enter history and legacy runs are r
   legacy.prepare("UPDATE attempts SET preview=0,public=1 WHERE id=?").run(a.id);
   legacy.close();
   const migration = spawnSync(
-    process.execPath,
-    ["--input-type=module", "-e", "import './server/db.mjs';"],
+    resolve(
+      "target/debug",
+      process.platform === "win32"
+        ? "quizcraft-server.exe"
+        : "quizcraft-server",
+    ),
+    ["migrate"],
     { env: { ...process.env, DATABASE_PATH: database }, encoding: "utf8" },
   );
   assert.equal(migration.status, 0, migration.stderr);

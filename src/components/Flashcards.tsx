@@ -14,10 +14,12 @@ import { Button } from "./ui/button";
 export function Flashcards({
   quizId,
   onBack,
+  backLabel,
   onEdit,
 }: {
   quizId: string;
   onBack: () => void;
+  backLabel: string;
   onEdit: () => void;
 }) {
   const [quiz, setQuiz] = useState<Quiz | null>(null),
@@ -87,7 +89,7 @@ export function Flashcards({
             and right for the previous question. Press Escape to exit.
           </Dialog.Description>
           <button className="text-link" onClick={onBack}>
-            <ArrowLeft size={16} /> Back to my quizzes
+            <ArrowLeft size={16} /> {backLabel}
           </button>
           <div className="page-title">
             <div>

@@ -5,3 +5,7 @@ data
 test-results
 playwright-report
 dist
+target
+src-tauri/gen/android
+*.jks
+*.keystore

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Plus,
-  Copy,
   Trash2,
   ArrowUp,
   ArrowDown,
@@ -12,12 +11,12 @@ import {
   Save,
   Image,
   Settings2,
-  GripVertical,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Select } from "./ui/select";
 import { Dialog } from "./ui/dialog";
-import { api, share, type Quiz, type Question, type Library } from "../lib/api";
+import { api, type Quiz, type Question, type Library } from "../lib/api";
+import { readCoverImage } from "../lib/cover";
 const fresh = (): Question => ({
   id: crypto.randomUUID(),
   type: "multiple",
@@ -30,16 +29,20 @@ const fresh = (): Question => ({
 export function Studio({
   id,
   onBack,
+  onPublished,
   onPreview,
   notify,
 }: {
   id: string;
   onBack: () => void;
+  onPublished: () => Promise<void>;
   onPreview: (q: Quiz) => void;
   notify: (s: string) => void;
 }) {
   const [quiz, setQuiz] = useState<Quiz | null>(null),
     [selected, setSelected] = useState(0),
+    [coverBusy, setCoverBusy] = useState(false),
+    [coverError, setCoverError] = useState(""),
     [saving, setSaving] = useState("Loading draft…"),
     [tab, setTab] = useState("questions"),
     [error, setError] = useState(""),
@@ -48,6 +51,13 @@ export function Studio({
     [categoryError, setCategoryError] = useState(""),
     [deleteCategoryOpen, setDeleteCategoryOpen] = useState(false),
     [deletingCategory, setDeletingCategory] = useState(false);
+  const coverRequest = useRef(0);
+  useEffect(
+    () => () => {
+      coverRequest.current++;
+    },
+    [id],
+  );
   const version = useRef(0),
     initial = useRef(true),
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -190,14 +200,14 @@ export function Studio({
       await api("/quizzes/" + id, "PUT", {
         ...quiz,
         status: publish ? "published" : "draft",
+        visibility: publish ? "public" : quiz.visibility,
       });
       setSaving(publish ? "Published" : "Draft saved");
       setError("");
       dirty.current = false;
       if (publish) {
-        notify("Quiz published! Your link is ready to share.");
-        await navigator.clipboard.writeText(share(id)).catch(() => {});
-        onBack();
+        notify("Quiz published to Discover on this device.");
+        await onPublished();
       }
       if (preview) onPreview({ ...quiz, preview: true });
       else if (!publish) {
@@ -208,12 +218,9 @@ export function Studio({
       setError((e as Error).message);
     }
   }
-  function reorder(delta: number) {
+  function switchQuestion(delta: number) {
     const target = selected + delta;
     if (target < 0 || target >= list.length) return;
-    const next = [...list];
-    [next[selected], next[target]] = [next[target], next[selected]];
-    change({ questions: next });
     setSelected(target);
   }
   if (!quiz)
@@ -285,51 +292,11 @@ export function Studio({
           className={tab === "settings" ? "active" : ""}
           onClick={() => setTab("settings")}
         >
-          02 <span>Settings & sharing</span>
+          02 <span>Quiz settings</span>
         </button>
       </div>
       {tab === "questions" ? (
-        <div className="studio-grid">
-          <aside className="panel question-list">
-            <h3>
-              Questions <span>{list.length}</span>
-            </h3>
-            {list.map((q, i) => (
-              <div
-                key={q.id}
-                className={`question-list-row ${selected === i ? "active" : ""}`}
-              >
-                <button
-                  className="question-select"
-                  onClick={() => setSelected(i)}
-                >
-                  <GripVertical size={14} />
-                  <b>{i + 1}</b>
-                  <span>{q.prompt || "Untitled question"}</span>
-                </button>
-                <button
-                  className="icon-btn danger question-delete"
-                  aria-label={`Delete question ${i + 1}`}
-                  onClick={() => removeQuestion(i)}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-            <Button
-              variant="outline"
-              onClick={() => {
-                change({ questions: [...list, fresh()] });
-                setSelected(list.length);
-              }}
-            >
-              <Plus size={16} /> Add question
-            </Button>
-            <div className="studio-tip">
-              A little variety goes a long way. Mix question types to keep
-              things interesting.
-            </div>
-          </aside>
+        <div className="studio-layout">
           <div className="studio-fields">
             <section className="panel">
               <h2>The big picture</h2>
@@ -420,13 +387,53 @@ export function Studio({
               </p>
               {categoryError && <p role="alert">{categoryError}</p>}
               <label>
-                <Image size={15} /> Cover image URL
+                <Image size={15} /> Cover image (saved offline)
                 <input
-                  type="url"
-                  value={quiz.cover}
-                  onChange={(e) => change({ cover: e.target.value })}
-                  placeholder="https://…"
+                  type="file"
+                  accept="image/*"
+                  disabled={coverBusy}
+                  aria-label="Cover image"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    const request = ++coverRequest.current;
+                    setCoverBusy(true);
+                    setCoverError("");
+                    try {
+                      const cover = await readCoverImage(file);
+                      if (request === coverRequest.current) change({ cover });
+                    } catch (error) {
+                      if (request === coverRequest.current)
+                        setCoverError((error as Error).message);
+                    } finally {
+                      if (request === coverRequest.current) setCoverBusy(false);
+                    }
+                  }}
                 />
+                {coverBusy && <span role="status">Preparing cover image?</span>}
+                {coverError && <span role="alert">{coverError}</span>}
+                {quiz.cover && (
+                  <img
+                    className="studio-cover-preview"
+                    src={quiz.cover}
+                    alt="Quiz cover preview"
+                  />
+                )}
+                {quiz.cover && (
+                  <button
+                    type="button"
+                    className="text-link"
+                    onClick={() => {
+                      coverRequest.current++;
+                      setCoverBusy(false);
+                      setCoverError("");
+                      change({ cover: "" });
+                    }}
+                  >
+                    Remove cover image
+                  </button>
+                )}
               </label>
               <label>
                 Color theme
@@ -453,40 +460,40 @@ export function Studio({
               </label>
             </section>
             {question ? (
-              <section className="panel question-editor">
+              <section className="panel question-editor" key={question.id}>
                 <div className="section-heading">
                   <h2>Question {selected + 1}</h2>
                   <div className="button-row">
                     <button
                       className="icon-btn"
-                      aria-label="Move question up"
+                      aria-label="Previous question"
+                      title="Previous question"
                       disabled={selected === 0}
-                      onClick={() => reorder(-1)}
+                      onClick={() => switchQuestion(-1)}
                     >
                       <ArrowUp size={17} />
                     </button>
                     <button
                       className="icon-btn"
-                      aria-label="Move question down"
+                      aria-label="Next question"
+                      title="Next question"
                       disabled={selected === list.length - 1}
-                      onClick={() => reorder(1)}
+                      onClick={() => switchQuestion(1)}
                     >
                       <ArrowDown size={17} />
                     </button>
                     <button
                       className="icon-btn"
-                      aria-label="Duplicate question"
+                      aria-label="Add blank question"
+                      title="Add blank question"
                       onClick={() => {
                         change({
-                          questions: [
-                            ...list,
-                            { ...question, id: crypto.randomUUID() },
-                          ],
+                          questions: [...list, fresh()],
                         });
                         setSelected(list.length);
                       }}
                     >
-                      <Copy size={17} />
+                      <Plus size={17} />
                     </button>
                     <button
                       className="icon-btn danger"
@@ -684,7 +691,7 @@ export function Studio({
           <h2>
             <Settings2 size={20} /> Make it your own
           </h2>
-          <p>Choose how people discover and take your quiz.</p>
+          <p>Choose how you study this quiz on this device.</p>
           <div className="field-row">
             <label>
               Visibility
@@ -695,12 +702,12 @@ export function Studio({
                   change({ visibility: value as Quiz["visibility"] })
                 }
                 options={[
-                  { value: "public", label: "Public - appears in discovery" },
+                  { value: "public", label: "Show in Discover" },
                   {
                     value: "unlisted",
-                    label: "Unlisted - anyone with the link",
+                    label: "Only in My quizzes",
                   },
-                  { value: "private", label: "Private - only you" },
+                  { value: "private", label: "Only in My quizzes" },
                 ]}
               />
             </label>
@@ -766,11 +773,6 @@ export function Studio({
           {(
             [
               [
-                "guests",
-                "Allow guests",
-                "People can take this quiz without an account.",
-              ],
-              [
                 "review",
                 "Review before submitting",
                 "Let learners check their answers.",
@@ -782,8 +784,8 @@ export function Studio({
               ],
               [
                 "rankings",
-                "Public leaderboard",
-                "Participants choose whether to appear.",
+                "Device leaderboard",
+                "Keep scores for learners using this device.",
               ],
               [
                 "randomQuestions",

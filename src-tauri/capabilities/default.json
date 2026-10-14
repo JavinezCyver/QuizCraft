@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "QuizCraft main window. API calls use the scoped Rust command.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

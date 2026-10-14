@@ -14,14 +14,11 @@ import {
   GraduationCap,
   History,
   LayoutDashboard,
-  Lightbulb,
-  LogOut,
   Menu,
   Moon,
   Plus,
   Search,
   Settings,
-  ShieldCheck,
   Sparkles,
   Sun,
   Target,
@@ -36,7 +33,6 @@ import {
   Landmark,
   Copy,
   Pencil,
-  Flag,
   Clock,
   Trash2,
   Layers,
@@ -48,7 +44,14 @@ import { Dialog } from "./components/ui/dialog";
 import { Studio } from "./components/Studio";
 import { Player } from "./components/Player";
 import { Flashcards } from "./components/Flashcards";
-import { api, share, type Quiz, type User, type Library } from "./lib/api";
+import { api, type Quiz, type User, type Library } from "./lib/api";
+import { localUser } from "./lib/offline";
+import {
+  exportData,
+  downloadData,
+  importQuizzes,
+  restoreBackup,
+} from "./lib/transfer";
 const categoryIcons: Record<string, LucideIcon> = {
   Education: GraduationCap,
   Science: Atom,
@@ -65,71 +68,6 @@ const navItems = [
   { id: "bookmarks", label: "Saved quizzes", icon: Bookmark },
   { id: "history", label: "Quiz history", icon: History },
 ];
-function Illustration() {
-  return (
-    <div className="hero-illustration" aria-hidden="true">
-      <div className="orbit orbit-one" />
-      <div className="orbit orbit-two" />
-      <span className="hero-spark spark-one">✦</span>
-      <span className="hero-spark spark-two">✧</span>
-      <span className="hero-spark spark-three">+</span>
-      <div className="floating-bubble bubble-light">
-        <Lightbulb size={24} />
-      </div>
-      <div className="floating-bubble bubble-check">
-        <Check size={22} />
-      </div>
-      <div className="floating-bubble bubble-zap">
-        <Zap size={22} />
-      </div>
-      <div className="back-paper" />
-      <div className="quiz-paper">
-        <div className="paper-title">
-          <span className="paper-icon">
-            <Sparkles size={16} />
-          </span>
-          <span>THE CURIOSITY QUIZ</span>
-          <span>•••</span>
-        </div>
-        <div className="paper-rule" />
-        <h3>
-          Ready for a little
-          <br />
-          brain adventure?
-        </h3>
-        <div className="paper-option">
-          <span>A</span> Learn something new
-        </div>
-        <div className="paper-option selected">
-          <span>B</span> Challenge yourself <Check size={14} />
-        </div>
-        <div className="paper-option">
-          <span>C</span> All of the above
-        </div>
-        <div className="paper-bottom">
-          <div>
-            <i />
-            <i />
-            <i />
-            <i />
-          </div>
-          <span>
-            Let’s go <ArrowRight size={13} />
-          </span>
-        </div>
-      </div>
-      <div className="floating-score">
-        <div>
-          <Trophy size={20} />
-        </div>
-        <span>
-          That’s a great start!<b>Curiosity level: 100%</b>
-        </span>
-        <span>✦</span>
-      </div>
-    </div>
-  );
-}
 function QuizCard({
   quiz,
   onOpen,
@@ -137,6 +75,9 @@ function QuizCard({
   saved,
   onEdit,
   onFlashcards,
+  onDelete,
+  onExport,
+  onDuplicate,
 }: {
   quiz: Quiz;
   onOpen: () => void;
@@ -144,6 +85,9 @@ function QuizCard({
   saved: boolean;
   onEdit?: () => void;
   onFlashcards?: () => void;
+  onDelete?: () => void;
+  onExport?: () => void;
+  onDuplicate?: () => void;
 }) {
   const Icon = categoryIcons[quiz.category] || BookOpen;
   return (
@@ -199,7 +143,7 @@ function QuizCard({
             {quiz.plays || 0}
           </span>
         </div>
-        {(onEdit || onFlashcards) && (
+        {(onEdit || onFlashcards || onDelete) && (
           <div className="card-actions">
             {onEdit && (
               <button className="text-link" onClick={onEdit}>
@@ -211,6 +155,21 @@ function QuizCard({
                 <Layers size={14} /> Flashcards
               </button>
             )}
+            {onDelete && (
+              <button className="text-link danger" onClick={onDelete}>
+                <Trash2 size={14} /> Delete
+              </button>
+            )}
+            {onExport && (
+              <button className="text-link" onClick={onExport}>
+                <Copy size={14} /> Export quiz
+              </button>
+            )}
+            {onDuplicate && (
+              <button className="text-link" onClick={onDuplicate}>
+                <Copy size={14} /> Duplicate
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -220,7 +179,7 @@ function QuizCard({
 export default function App() {
   const [view, setView] = useState("home"),
     [quizzes, setQuizzes] = useState<Quiz[]>([]),
-    [user, setUser] = useState<User | null>(null),
+    [user, setUser] = useState<User>(localUser),
     [library, setLibrary] = useState<Library>({
       quizzes: [],
       bookmarks: [],
@@ -235,9 +194,9 @@ export default function App() {
     [difficulty, setDifficulty] = useState("All levels"),
     [sort, setSort] = useState("popular"),
     [showAll, setShowAll] = useState(false),
-    [authOpen, setAuthOpen] = useState(false),
-    [authMode, setAuthMode] = useState("login"),
-    [authError, setAuthError] = useState(""),
+    [transfer, setTransfer] = useState(false),
+    [transferText, setTransferText] = useState(""),
+    [transferError, setTransferError] = useState(""),
     [busy, setBusy] = useState(false),
     [toast, setToast] = useState(""),
     [mobile, setMobile] = useState(false),
@@ -246,13 +205,12 @@ export default function App() {
     ),
     [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null),
     [quizReturnView, setQuizReturnView] = useState("home"),
+    [flashcardsReturnView, setFlashcardsReturnView] = useState("home"),
     [editId, setEditId] = useState(""),
     [profile, setProfile] = useState(false),
-    [report, setReport] = useState<Quiz | null>(null),
     [deleteTarget, setDeleteTarget] = useState<Quiz | null>(null),
     [deleting, setDeleting] = useState(false),
     [deleteError, setDeleteError] = useState(""),
-    [admin, setAdmin] = useState<any>(null),
     [grading, setGrading] = useState<any[]>([]);
   const notify = (message: string) => {
     setToast(message);
@@ -268,7 +226,7 @@ export default function App() {
     try {
       const [q, u] = await Promise.all([
         api<Quiz[]>("/quizzes"),
-        api<User | null>("/me"),
+        api<User>("/me"),
       ]);
       setQuizzes(q);
       setUser(u);
@@ -295,11 +253,6 @@ export default function App() {
   }
   useEffect(() => {
     void load();
-    const token = new URLSearchParams(location.search).get("reset");
-    if (token) {
-      setAuthMode("reset");
-      setAuthOpen(true);
-    }
   }, []);
   useEffect(() => {
     const mobileLayout = window.matchMedia("(max-width: 760px)");
@@ -325,11 +278,6 @@ export default function App() {
     localStorage.setItem("quizcraft-theme", dark ? "dark" : "light");
   }, [dark]);
   function navigate(next: string) {
-    if (next !== "home" && !user) {
-      setAuthMode("login");
-      setAuthOpen(true);
-      return;
-    }
     setView(next);
     setMobile(false);
     setSearch("");
@@ -337,21 +285,32 @@ export default function App() {
     window.history.replaceState({}, "", location.pathname);
     window.scrollTo({ top: 0, behavior: "smooth" });
     if (user) void refreshLibrary();
-    if (next === "admin")
-      api("/admin")
-        .then(setAdmin)
-        .catch((e) => notify(e.message));
     if (next === "quizzes")
       api("/grading")
         .then(setGrading)
         .catch(() => {});
   }
+  useEffect(() => {
+    const handleBack = () => {
+      if (document.querySelector('[role="dialog"], [role="listbox"]')) {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+        return;
+      }
+      if (mobile) {
+        setMobile(false);
+        return;
+      }
+      if (view === "studio") navigate("quizzes");
+      else if (view === "flashcards") navigate(flashcardsReturnView);
+      else if (view === "take") navigate(quizReturnView);
+      else if (view !== "home") navigate("home");
+    };
+    window.addEventListener("quizcraft-back", handleBack);
+    return () => window.removeEventListener("quizcraft-back", handleBack);
+  }, [view, mobile, quizReturnView, flashcardsReturnView]);
   async function createQuiz() {
-    if (!user) {
-      setAuthMode("register");
-      setAuthOpen(true);
-      return;
-    }
     try {
       const q = await api<{ id: string }>("/quizzes", "POST", {});
       setEditId(q.id);
@@ -361,11 +320,6 @@ export default function App() {
     }
   }
   async function saveQuiz(q: Quiz) {
-    if (!user) {
-      setAuthMode("login");
-      setAuthOpen(true);
-      return;
-    }
     const saved = library.bookmarks.includes(q.id);
     try {
       await api("/bookmarks/" + q.id, "POST", { saved: !saved });
@@ -390,43 +344,14 @@ export default function App() {
       notify((e as Error).message);
     }
   }
-  async function authenticate(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setAuthError("");
-    const data = Object.fromEntries(new FormData(event.currentTarget));
+  async function openExport(quiz?: Quiz) {
     try {
-      if (authMode === "forgot") {
-        await api("/auth/forgot", "POST", data);
-        notify("If that email is registered, a reset link is on its way.");
-        setAuthOpen(false);
-      } else if (authMode === "reset") {
-        await api("/auth/reset", "POST", {
-          ...data,
-          token: new URLSearchParams(location.search).get("reset"),
-        });
-        notify("Password reset. Sign in with your new password.");
-        setAuthMode("login");
-        window.history.replaceState({}, "", location.pathname);
-      } else {
-        const u = await api<User>(
-          "/auth/" + (authMode === "register" ? "register" : "login"),
-          "POST",
-          data,
-        );
-        setUser(u);
-        setAuthOpen(false);
-        await refreshLibrary();
-        notify(
-          authMode === "register"
-            ? "Welcome to QuizCraft! Let’s make something great."
-            : "Welcome back, " + u.name + ".",
-        );
-      }
-    } catch (e) {
-      setAuthError((e as Error).message);
-    } finally {
-      setBusy(false);
+      setProfile(false);
+      setTransferText(await exportData(quiz));
+      setTransferError("");
+      setTransfer(true);
+    } catch (error) {
+      notify((error as Error).message);
     }
   }
   const filtered = quizzes
@@ -484,6 +409,7 @@ export default function App() {
             editable || library.quizzes.some((owned) => owned.id === q.id)
               ? () => {
                   setActiveQuiz(q);
+                  setFlashcardsReturnView(view);
                   setView("flashcards");
                 }
               : undefined
@@ -492,6 +418,27 @@ export default function App() {
             editable
               ? () => {
                   setEditId(q.id);
+                  setView("studio");
+                }
+              : undefined
+          }
+          onDelete={
+            editable
+              ? () => {
+                  setDeleteError("");
+                  setDeleteTarget(q);
+                }
+              : undefined
+          }
+          onExport={editable ? () => openExport(q) : undefined}
+          onDuplicate={
+            editable
+              ? async () => {
+                  const copy = await api(
+                    "/quizzes/" + q.id + "/duplicate",
+                    "POST",
+                  );
+                  setEditId(copy.id);
                   setView("studio");
                 }
               : undefined
@@ -556,6 +503,7 @@ export default function App() {
           {navItems.map(({ id, label, icon: Icon }) => (
             <button
               className={view === id ? "nav-item active" : "nav-item"}
+              aria-label={label}
               key={id}
               onClick={() => navigate(id)}
             >
@@ -575,36 +523,11 @@ export default function App() {
           <span>Achievements</span>
           <span className="new-tag">NEW</span>
         </button>
-        <button
-          className="nav-item"
-          onClick={() => (user ? setProfile(true) : setAuthOpen(true))}
-        >
+        <button className="nav-item" onClick={() => setProfile(true)}>
           <Settings size={19} />
           <span>Settings</span>
         </button>
-        {user?.admin && (
-          <button className="nav-item" onClick={() => navigate("admin")}>
-            <ShieldCheck size={19} />
-            <span>Administration</span>
-          </button>
-        )}
         <div className="sidebar-bottom">
-          {showCreateQuiz && (
-            <div className="create-callout">
-              <span className="callout-icon">
-                <Sparkles size={20} />
-              </span>
-              <h3>Got a great question?</h3>
-              <p>
-                Turn what you know into
-                <br />
-                something worth sharing.
-              </p>
-              <Button size="sm" onClick={createQuiz}>
-                <Plus size={16} /> Create a quiz
-              </Button>
-            </div>
-          )}
           <button className="theme-toggle" onClick={() => setDark(!dark)}>
             {dark ? <Sun size={17} /> : <Moon size={17} />}
             <span>{dark ? "Light mode" : "Dark mode"}</span>
@@ -620,31 +543,10 @@ export default function App() {
                 user?.name?.[0] || "G"
               )}
             </span>
-            <button
-              onClick={() => (user ? setProfile(true) : setAuthOpen(true))}
-            >
+            <button onClick={() => setProfile(true)}>
               <b>{user?.name || "Hello, curious mind"}</b>
-              <span>
-                {user ? "Personal account" : "Your next discovery awaits"}
-              </span>
+              <span>Offline - saved on this device</span>
             </button>
-            {user ? (
-              <button
-                className="icon-btn"
-                aria-label="Log out"
-                onClick={async () => {
-                  await api("/auth/logout", "POST");
-                  setUser(null);
-                  setLibrary({ quizzes: [], bookmarks: [], attempts: [] });
-                  setView("home");
-                  notify("You have been signed out.");
-                }}
-              >
-                <LogOut size={17} />
-              </button>
-            ) : (
-              <ChevronRight size={16} />
-            )}
           </div>
         </div>
       </aside>
@@ -669,27 +571,15 @@ export default function App() {
           </div>
           <div className="topbar-actions">
             <span className="community-note">
-              <span /> A world of curious minds
+              <span /> Works fully offline
             </span>
-            {user ? (
-              <button
-                className="header-avatar"
-                onClick={() => setProfile(true)}
-                aria-label="Open profile"
-              >
-                {user.name[0]}
-              </button>
-            ) : (
-              <button
-                className="sign-in"
-                onClick={() => {
-                  setAuthMode("login");
-                  setAuthOpen(true);
-                }}
-              >
-                Log in
-              </button>
-            )}
+            <button
+              className="header-avatar"
+              onClick={() => setProfile(true)}
+              aria-label="Open settings"
+            >
+              {user.name[0]}
+            </button>
             {showCreateQuiz && view !== "quizzes" && (
               <Button size="sm" onClick={createQuiz} aria-label="Create a Quiz">
                 <Plus size={16} />
@@ -708,6 +598,18 @@ export default function App() {
                 navigate("quizzes");
                 void load();
               }}
+              onPublished={async () => {
+                navigate("home");
+                setDifficulty("All levels");
+                setSort("newest");
+                setShowAll(true);
+                await load();
+                requestAnimationFrame(() => {
+                  document
+                    .getElementById("explore")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                });
+              }}
               onPreview={(q) => {
                 setQuizReturnView("quizzes");
                 setActiveQuiz({
@@ -724,7 +626,8 @@ export default function App() {
               <Flashcards
                 key={activeQuiz.id}
                 quizId={activeQuiz.id}
-                onBack={() => navigate("quizzes")}
+                backLabel={`Back to ${navItems.find((item) => item.id === flashcardsReturnView)?.label.toLowerCase() || "discover"}`}
+                onBack={() => navigate(flashcardsReturnView)}
                 onEdit={() => {
                   setEditId(activeQuiz.id);
                   setView("studio");
@@ -748,22 +651,9 @@ export default function App() {
               <div className="quiz-tools">
                 <button
                   className="text-link"
-                  onClick={() =>
-                    navigator.clipboard
-                      .writeText(share(activeQuiz.id))
-                      .then(() => notify("Quiz link copied."))
-                      .catch(() => notify("Could not copy the link."))
-                  }
+                  onClick={() => openExport(activeQuiz)}
                 >
-                  <Copy size={15} /> Copy quiz link
-                </button>
-                <button
-                  className="text-link muted"
-                  onClick={() =>
-                    user ? setReport(activeQuiz) : setAuthOpen(true)
-                  }
-                >
-                  <Flag size={15} /> Report quiz
+                  <Copy size={15} /> Export quiz
                 </button>
                 {user?.id === activeQuiz.owner && (
                   <button
@@ -780,82 +670,6 @@ export default function App() {
             </>
           ) : view === "home" ? (
             <>
-              <div className="welcome-line">
-                <span>
-                  <span className="tiny-spark">✦</span> A LITTLE CURIOSITY.
-                  ENDLESS POSSIBILITIES.
-                </span>
-                <span>Learn something new today.</span>
-              </div>
-              <section className="hero">
-                <div className="hero-copy">
-                  <span className="hero-label">
-                    <span /> BIG IDEAS START WITH A QUESTION
-                  </span>
-                  <h1>
-                    Create. Share.
-                    <br />
-                    <span>Challenge Yourself.</span>
-                  </h1>
-                  <p>
-                    Share what you know. Discover what you don’t.
-                    <br />
-                    Make a quiz, find your next challenge, and keep growing.
-                  </p>
-                  <div className="button-row">
-                    <Button onClick={createQuiz}>
-                      <Plus size={18} /> Create a Quiz
-                      <ArrowUpRight size={17} />
-                    </Button>
-                    <Button variant="outline" onClick={explore}>
-                      Explore Quizzes
-                      <ArrowRight size={17} />
-                    </Button>
-                  </div>
-                  <div className="hero-social">
-                    <div className="avatar-stack">
-                      <span>A</span>
-                      <span>J</span>
-                      <span>M</span>
-                      <span>K</span>
-                    </div>
-                    <div>
-                      <span className="star-rating">★★★★★</span>
-                      <span>Made for curious minds like yours</span>
-                    </div>
-                  </div>
-                </div>
-                <Illustration />
-              </section>
-              <div className="value-strip">
-                <div>
-                  <span className="value-icon lavender">
-                    <BookOpen size={20} />
-                  </span>
-                  <span>
-                    <b>A world to discover</b>
-                    <small>Fresh perspectives, every topic</small>
-                  </span>
-                </div>
-                <div>
-                  <span className="value-icon peach">
-                    <Users size={20} />
-                  </span>
-                  <span>
-                    <b>Better when shared</b>
-                    <small>Learn together, grow together</small>
-                  </span>
-                </div>
-                <div>
-                  <span className="value-icon mint">
-                    <Zap size={20} />
-                  </span>
-                  <span>
-                    <b>Your pace. Your challenge.</b>
-                    <small>A little brain workout, anytime</small>
-                  </span>
-                </div>
-              </div>
               <section id="explore" className="explore-section">
                 <div className="section-heading">
                   <div>
@@ -985,8 +799,8 @@ export default function App() {
                   )
                 ) : !quizzes.length ? (
                   <Empty
-                    title="No quizzes published yet"
-                    text="Publish a public quiz to share it with the community. Your drafts stay in My quizzes."
+                    title="Your library starts here"
+                    text="Create your first quiz or import a quiz file in Settings. Your questions and answers stay on this device."
                     action={createQuiz}
                     label="Create a quiz"
                   />
@@ -1112,78 +926,6 @@ export default function App() {
                   Stay curious. <Sparkles size={14} />
                 </span>
               </footer>
-            </>
-          ) : view === "admin" ? (
-            <>
-              <div className="page-title">
-                <span className="eyebrow">PLATFORM HEALTH</span>
-                <h1>Administration</h1>
-                <p>Review reports and keep the community welcoming.</p>
-              </div>
-              {admin ? (
-                <>
-                  <div className="stats-grid">
-                    {[
-                      ["Users", admin.users],
-                      ["Quizzes", admin.quizzes],
-                      ["Attempts", admin.attempts],
-                    ].map(([label, n]) => (
-                      <div className="panel stat" key={label}>
-                        <span>{label}</span>
-                        <strong>{n}</strong>
-                      </div>
-                    ))}
-                  </div>
-                  <section className="panel">
-                    <h2>Content reports</h2>
-                    {admin.reports.length ? (
-                      admin.reports.map((r: any) => (
-                        <div className="activity-row" key={r.id}>
-                          <div>
-                            <b>{r.title}</b>
-                            <p>{r.reason}</p>
-                            <small>{r.status}</small>
-                          </div>
-                          {r.status === "open" && (
-                            <div className="button-row">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={async () => {
-                                  await api(
-                                    "/admin/reports/" + r.id,
-                                    "PATCH",
-                                    {},
-                                  );
-                                  setAdmin(await api("/admin"));
-                                }}
-                              >
-                                Resolve
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={async () => {
-                                  await api("/admin/reports/" + r.id, "PATCH", {
-                                    hide: true,
-                                  });
-                                  setAdmin(await api("/admin"));
-                                  notify("Quiz hidden and report resolved.");
-                                }}
-                              >
-                                Hide quiz
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    ) : (
-                      <p>No reports to review.</p>
-                    )}
-                  </section>
-                </>
-              ) : (
-                <p>Loading moderation tools…</p>
-              )}
             </>
           ) : view === "achievements" ? (
             <>
@@ -1456,7 +1198,7 @@ export default function App() {
                       className={sort === "published" ? "active" : ""}
                       onClick={() => setSort("published")}
                     >
-                      Published
+                      Ready to study
                     </button>
                   </div>
                   {studyQuizzes.length ? (
@@ -1479,44 +1221,6 @@ export default function App() {
                       label="Create a quiz"
                     />
                   )}
-                  {studyQuizzes.map((q) => (
-                    <div className="quiz-manage-row" key={q.id}>
-                      <b>{q.title}</b>
-                      <span className="pill">{q.visibility}</span>
-                      <button
-                        className="text-link"
-                        onClick={() =>
-                          navigator.clipboard
-                            .writeText(share(q.id))
-                            .then(() => notify("Quiz link copied."))
-                        }
-                      >
-                        <Copy size={14} /> Copy link
-                      </button>
-                      <button
-                        className="text-link"
-                        onClick={async () => {
-                          const copy = await api(
-                            "/quizzes/" + q.id + "/duplicate",
-                            "POST",
-                          );
-                          setEditId(copy.id);
-                          setView("studio");
-                        }}
-                      >
-                        <Copy size={14} /> Duplicate
-                      </button>
-                      <button
-                        className="text-link danger"
-                        onClick={() => {
-                          setDeleteError("");
-                          setDeleteTarget(q);
-                        }}
-                      >
-                        <Trash2 size={14} /> Delete
-                      </button>
-                    </div>
-                  ))}
                   {grading.length > 0 && (
                     <section className="panel">
                       <h2>Short answers to review</h2>
@@ -1623,116 +1327,6 @@ export default function App() {
         </main>
       </div>
       <Dialog
-        open={authOpen}
-        onOpenChange={setAuthOpen}
-        title={
-          authMode === "register"
-            ? "Let curiosity lead the way"
-            : authMode === "forgot"
-              ? "Find your way back"
-              : authMode === "reset"
-                ? "A fresh start"
-                : "Welcome back, curious mind"
-        }
-      >
-        <p className="dialog-subtitle">
-          {authMode === "register"
-            ? "Create an account to make quizzes and keep your discoveries."
-            : authMode === "forgot"
-              ? "We’ll email you a link to reset your password."
-              : "Your next “aha!” moment is waiting."}
-        </p>
-        <form onSubmit={authenticate}>
-          {authMode === "register" && (
-            <label>
-              Your name
-              <input
-                name="name"
-                required
-                maxLength={80}
-                autoComplete="name"
-                placeholder="Alex Taylor"
-              />
-            </label>
-          )}
-          {authMode !== "reset" && (
-            <label>
-              Email address
-              <input
-                name="email"
-                type="email"
-                required
-                autoComplete="email"
-                placeholder="you@example.com"
-              />
-            </label>
-          )}
-          {authMode !== "forgot" && (
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                required
-                minLength={authMode === "login" ? 1 : 10}
-                autoComplete={
-                  authMode === "login" ? "current-password" : "new-password"
-                }
-                placeholder={
-                  authMode === "register"
-                    ? "At least 10 characters"
-                    : "Your password"
-                }
-              />
-            </label>
-          )}
-          {authError && (
-            <div className="alert" role="alert">
-              {authError}
-            </div>
-          )}
-          <Button disabled={busy} className="full-width">
-            {busy
-              ? "One moment…"
-              : authMode === "register"
-                ? "Create account"
-                : authMode === "forgot"
-                  ? "Send reset link"
-                  : authMode === "reset"
-                    ? "Reset password"
-                    : "Log in"}
-            <ArrowRight size={17} />
-          </Button>
-          {authMode === "login" && (
-            <button
-              type="button"
-              className="text-link centered"
-              onClick={() => {
-                setAuthMode("forgot");
-                setAuthError("");
-              }}
-            >
-              Forgot your password?
-            </button>
-          )}
-          <div className="auth-switch">
-            {authMode === "register"
-              ? "Already have an account?"
-              : "New to QuizCraft?"}{" "}
-            <button
-              type="button"
-              className="text-link"
-              onClick={() => {
-                setAuthMode(authMode === "register" ? "login" : "register");
-                setAuthError("");
-              }}
-            >
-              {authMode === "register" ? "Log in" : "Join the curiosity"}
-            </button>
-          </div>
-        </form>
-      </Dialog>
-      <Dialog
         open={profile}
         onOpenChange={setProfile}
         title="Make yourself at home"
@@ -1750,7 +1344,7 @@ export default function App() {
                 ),
               );
               setProfile(false);
-              notify("Your profile has been updated.");
+              notify("Your local settings have been updated.");
             } catch (e) {
               notify((e as Error).message);
             } finally {
@@ -1767,19 +1361,31 @@ export default function App() {
               defaultValue={user?.name}
             />
           </label>
-          <label>
-            Profile picture URL
-            <input
-              name="avatar"
-              type="url"
-              placeholder="https://…"
-              defaultValue={user?.avatar}
-            />
-          </label>
-          <label>
-            Email
-            <input value={user?.email || ""} readOnly />
-          </label>
+          <p>
+            Your quizzes, flashcards, and results stay on this device. No
+            account or internet connection is needed.
+          </p>
+          <div className="button-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => openExport()}
+            >
+              Export backup
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setProfile(false);
+                setTransferText("");
+                setTransferError("");
+                setTransfer(true);
+              }}
+            >
+              Import quizzes / restore backup
+            </Button>
+          </div>
           <div className="setting-row">
             <div>
               <b>Appearance</b>
@@ -1795,43 +1401,100 @@ export default function App() {
             </Button>
           </div>
           <Button disabled={busy}>
-            Save profile
+            Save settings
             <Check size={16} />
           </Button>
         </form>
       </Dialog>
       <Dialog
-        open={!!report}
-        onOpenChange={(v) => !v && setReport(null)}
-        title="Help keep QuizCraft welcoming"
+        open={transfer}
+        onOpenChange={setTransfer}
+        title="Transfer quizzes and backups"
       >
-        <p>Report “{report?.title}” for review by the moderation team.</p>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
+        <p>
+          Export a backup or quiz as a JSON file. On Android, you can also
+          select and copy the text below. Import quizzes to add them to your
+          collection.
+        </p>
+        <label>
+          Choose a QuizCraft JSON file
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              if (file.size > 30_000_000) {
+                setTransferError("Choose a file smaller than 30 MB.");
+                return;
+              }
+              setTransferText(await file.text());
+              setTransferError("");
+            }}
+          />
+        </label>
+        <label>
+          Quiz or backup JSON
+          <textarea
+            rows={7}
+            value={transferText}
+            onChange={(event) => setTransferText(event.target.value)}
+          />
+        </label>
+        {transferError && <p role="alert">{transferError}</p>}
+        <div className="button-row">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!transferText || busy}
+            onClick={() => downloadData(transferText, "quizcraft-backup.json")}
+          >
+            Download JSON
+          </Button>
+          <Button
+            disabled={!transferText || busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const count = await importQuizzes(transferText);
+                await load();
+                setTransfer(false);
+                notify(`${count} quizzes imported.`);
+              } catch (error) {
+                setTransferError((error as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Import quizzes
+          </Button>
+        </div>
+        <p>
+          Restore backup replaces this device's current collection, saved
+          quizzes, display name, and history. Export a backup first if you want
+          to keep them.
+        </p>
+        <Button
+          variant="outline"
+          disabled={!transferText || busy}
+          onClick={async () => {
+            setBusy(true);
             try {
-              await api("/reports", "POST", {
-                quizId: report?.id,
-                reason: new FormData(e.currentTarget).get("reason"),
-              });
-              setReport(null);
-              notify("Report received. Thank you for helping.");
-            } catch (e) {
-              notify((e as Error).message);
+              await restoreBackup(transferText);
+              await load();
+              setTransfer(false);
+              navigate("quizzes");
+              notify("Backup restored.");
+            } catch (error) {
+              setTransferError((error as Error).message);
+            } finally {
+              setBusy(false);
             }
           }}
         >
-          <label>
-            What should we know?
-            <textarea
-              name="reason"
-              required
-              maxLength={2000}
-              placeholder="Describe your concern…"
-            />
-          </label>
-          <Button>Submit report</Button>
-        </form>
+          Restore backup and replace local data
+        </Button>
       </Dialog>
       <Dialog
         open={!!deleteTarget}
@@ -1842,8 +1505,8 @@ export default function App() {
       >
         <p>
           “{deleteTarget?.title}” will be removed from your quizzes, discovery,
-          and saved collections. Its share link will stop working. Attempts for
-          this quiz will also be removed from quiz history.
+          and saved collections. Attempts for this quiz will also be removed
+          from quiz history.
         </p>
         {deleteError && (
           <div className="alert" role="alert">

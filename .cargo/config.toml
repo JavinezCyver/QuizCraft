@@ -1,0 +1,7 @@
+[http]
+# Avoid stalled HTTP/2 multiplexed downloads on restrictive networks.
+multiplexing = false
+timeout = 60
+
+[net]
+retry = 2

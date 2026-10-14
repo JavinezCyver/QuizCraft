@@ -1,0 +1,17 @@
+[package]
+name = "quizcraft-mobile"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "quizcraft_mobile"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
