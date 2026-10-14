@@ -519,7 +519,7 @@ main {
   border: 1px solid #e6dbf5;
   border-radius: 14px;
   min-height: 352px;
-  overflow: hidden;
+  overflow: clip;
   padding: 35px 34px;
 }
 .hero:after {
@@ -885,16 +885,24 @@ main {
 }
 .value-strip {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 23px 0 34px;
   padding: 0 10px;
 }
 .value-strip > div {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 12px;
   padding-left: 21px;
   border-right: 1px solid var(--border);
+}
+.value-strip > div > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.value-icon {
+  flex-shrink: 0;
 }
 .value-strip > div:first-child {
   padding-left: 0;
@@ -1872,12 +1880,15 @@ label small {
 }
 .theme-options {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
 }
 .theme-swatch {
+  flex: 0 0 auto;
   width: 32px;
   height: 32px;
+  padding: 0;
   border-radius: 50%;
   border: 3px solid transparent;
   display: flex;
@@ -4324,6 +4335,10 @@ p,
   button:not(.quiz-cover):not(.flashcard) {
     min-height: 44px;
   }
+  .theme-swatch {
+    width: 44px;
+    height: 44px;
+  }
   .icon-btn,
   .card-bookmark,
   .question-dots > button {
@@ -4820,6 +4835,7 @@ p,
 .themed-select-menu {
   z-index: 120;
   width: var(--radix-select-trigger-width);
+  min-width: min(240px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
   max-height: min(360px, var(--radix-select-content-available-height));
   overflow: hidden;
@@ -4848,6 +4864,13 @@ p,
 }
 .themed-select-option[data-highlighted] {
   background: var(--purple-soft);
+}
+.themed-select-option > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.themed-select-option > span:last-child {
+  flex-shrink: 0;
 }
 .themed-select-option[data-state="checked"] {
   color: var(--purple);
@@ -4909,6 +4932,10 @@ p,
   min-height: 44px;
 }
 @media (max-width: 600px) {
+  .field-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
   .custom-category-row {
     flex-wrap: wrap;
   }
@@ -5009,6 +5036,34 @@ p,
 }
 .recent-card small {
   overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .quiz-grid {
+    display: flex;
+    gap: 14px;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding: 5px 0 12px;
+  }
+  .quiz-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .quiz-grid > * {
+    flex: 0 0 90%;
+    min-width: 0;
+    scroll-snap-align: start;
+  }
+  .quiz-grid:focus-visible {
+    outline: 2px solid var(--purple);
+    outline-offset: -2px;
+  }
+  .value-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 /* Show every history detail on phones without squeezing a four-column table. */
 @media (max-width: 760px) {

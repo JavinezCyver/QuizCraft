@@ -126,6 +126,12 @@ export function Player({
   }
   async function submit() {
     if (!attempt || submitted.current) return;
+    const expired = attempt.deadline && Date.now() >= attempt.deadline;
+    if (!expired && attempt.questions.some((q) => !answersRef.current[q.id]?.trim())) {
+      setError("Answer every question before submitting the quiz.");
+      return;
+    }
+    setError("");
     submitted.current = true;
     setBusy(true);
     try {
@@ -143,7 +149,8 @@ export function Player({
       setBusy(false);
     }
   }
-  const count = Object.values(answers).filter((a) => a.trim()).length;
+  const count = attempt?.questions.filter((q) => answers[q.id]?.trim()).length || 0;
+  const allAnswered = !!attempt?.questions.length && count === attempt.questions.length;
   const seconds = attempt?.deadline
     ? Math.max(0, Math.ceil((attempt.deadline - now) / 1000))
     : 0;
@@ -457,12 +464,12 @@ export function Player({
                   <span>
                     {i + 1}. {q.prompt}
                   </span>
-                  <b>{answers[q.id] || "Unanswered"}</b>
+                  <b>{answers[q.id]?.trim() || "Unanswered"}</b>
                   <ArrowRight size={16} />
                 </button>
               ))}
               <div className="review-actions">
-                <Button disabled={busy} onClick={submit}>
+                <Button disabled={busy || !allAnswered} onClick={submit}>
                   {busy ? "Submitting…" : "Submit quiz"}
                   <Check size={16} />
                 </Button>
@@ -495,15 +502,22 @@ export function Player({
                     </button>
                   ))}
                 </div>
-                {index < attempt.questions.length - 1 &&
+                {!allAnswered &&
                 displayQuiz.settings.layout !== "all" ? (
-                  <Button onClick={() => setIndex((i) => i + 1)}>
+                  <Button
+                    disabled={busy || !answers[attempt.questions[index].id]?.trim()}
+                    onClick={() => setIndex((i) =>
+                      i < attempt.questions.length - 1
+                        ? i + 1
+                        : attempt.questions.findIndex((q) => !answers[q.id]?.trim()),
+                    )}
+                  >
                     Next question
                     <ArrowRight size={16} />
                   </Button>
                 ) : (
                   <Button
-                    disabled={busy}
+                    disabled={busy || !allAnswered}
                     onClick={() =>
                       displayQuiz.settings.review ? setReview(true) : submit()
                     }

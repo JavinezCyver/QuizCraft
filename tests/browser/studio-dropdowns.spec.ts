@@ -22,7 +22,7 @@ test("editor dropdowns fit dark mobile screens and save their selections", async
     data: {
       ...draft,
       title: "Dropdown practice",
-      category: "Anatomy",
+      category: "Bacteriology",
       questions: [
         {
           type: "multiple",
@@ -41,6 +41,15 @@ test("editor dropdowns fit dark mobile screens and save their selections", async
     .click();
   await page.getByRole("button", { name: "My quizzes", exact: true }).click();
   await page.getByRole("button", { name: "Edit quiz", exact: true }).click();
+  const category = page.getByRole("combobox", { name: "Quiz category" });
+  await expect(category).toHaveText("Bacteriology");
+  expect((await category.boundingBox())!.width).toBeGreaterThan(180);
+  await category.click();
+  await expect(page.getByRole("listbox")).toBeInViewport({ ratio: 1 });
+  expect((await page.getByRole("listbox").boundingBox())!.width).toBeGreaterThanOrEqual(240);
+  const categoryText = page.getByRole("option", { name: "Bacteriology", exact: true }).locator("span").first();
+  expect(await categoryText.evaluate(el => el.getBoundingClientRect().height)).toBeLessThan(30);
+  await page.getByRole("option", { name: "Bacteriology", exact: true }).click();
   async function choose(label: string, option: string) {
     await page.getByRole("combobox", { name: label, exact: true }).click();
     await expect(page.getByRole("listbox")).toBeInViewport({ ratio: 1 });

@@ -470,7 +470,7 @@ export default function App() {
         : String(b.created || "").localeCompare(String(a.created || "")),
     );
   const cards = (items: Quiz[], editable = false) => (
-    <div className="quiz-grid">
+    <div className="quiz-grid" role="region" aria-label="Quizzes" tabIndex={0}>
       {items.map((q) => (
         <QuizCard
           key={q.id}
