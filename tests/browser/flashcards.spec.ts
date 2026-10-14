@@ -1,5 +1,31 @@
 import { test, expect } from "@playwright/test";
 
+test("own published cards offer flashcards in Discover", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 844 });
+  await page.request.post("/api/auth/register", {
+    data: { email: `published-flashcards-${Date.now()}@example.test`, name: "Published learner", password: "flashcard-password" },
+  });
+  const { id } = await (await page.request.post("/api/quizzes", { data: {} })).json();
+  const quiz = await (await page.request.get(`/api/quizzes/${id}`)).json();
+  await page.request.put(`/api/quizzes/${id}`, {
+    data: { ...quiz, title: "Published study deck", status: "published", visibility: "public", questions: [
+      { type: "blank", prompt: "Published question", options: [], accepted: ["Published answer"], points: 10 },
+    ] },
+  });
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Search quizzes", exact: true }).fill("Published study deck");
+  const card = page.locator(".quiz-card").filter({ has: page.getByRole("button", { name: "Published study deck", exact: true }) });
+  await card.getByRole("button", { name: "Flashcards", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal answer: Published question", exact: true }).click();
+  await expect(page.locator('.flashcard-back[aria-hidden="false"]')).toContainText("Published answer");
+  await page.keyboard.press("Escape");
+  await page.request.post("/api/auth/logout");
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Search quizzes", exact: true }).fill("Published study deck");
+  await expect(card).toBeVisible();
+  await expect(card.getByRole("button", { name: "Flashcards", exact: true })).toHaveCount(0);
+});
+
 test("flashcard decks filter and sort by category on mobile", async ({
   page,
 }) => {

@@ -199,11 +199,13 @@ function QuizCard({
             {quiz.plays || 0}
           </span>
         </div>
-        {onEdit && (
+        {(onEdit || onFlashcards) && (
           <div className="card-actions">
-            <button className="text-link" onClick={onEdit}>
-              <Pencil size={14} /> Edit quiz
-            </button>
+            {onEdit && (
+              <button className="text-link" onClick={onEdit}>
+                <Pencil size={14} /> Edit quiz
+              </button>
+            )}
             {onFlashcards && (
               <button className="text-link" onClick={onFlashcards}>
                 <Layers size={14} /> Flashcards
@@ -479,7 +481,7 @@ export default function App() {
           onSave={() => saveQuiz(q)}
           saved={library.bookmarks.includes(q.id)}
           onFlashcards={
-            editable
+            editable || library.quizzes.some((owned) => owned.id === q.id)
               ? () => {
                   setActiveQuiz(q);
                   setView("flashcards");
