@@ -1,4 +1,4 @@
-import { matchesAnswer } from "./questions";
+import { matchesAnswer, hasDuplicateOptions } from "./questions";
 import type { Quiz, User, History } from "./api";
 import type { StudyProgress } from "./study-progress";
 
@@ -217,6 +217,16 @@ function recalculate(a: Attempt) {
     (response: any) => response.earned === null,
   ).length;
 }
+function playCount(data: OfflineData, quiz: Quiz): number {
+  const completed =
+    data.attempts.filter(
+      (attempt) =>
+        attempt.quiz.id === quiz.id && attempt.result && !attempt.preview,
+    ).length +
+    (data.studySessions || []).filter((session) => session.quiz_id === quiz.id)
+      .length;
+  return Math.max(quiz.plays || 0, completed);
+}
 export function offlineRequest<T>(
   path: string,
   method: string,
@@ -236,9 +246,14 @@ export function offlineRequest<T>(
     }
     if (path === "/library")
       return {
-        quizzes: data.quizzes,
+        quizzes: data.quizzes.map((quiz) => ({
+          ...quiz,
+          plays: playCount(data, quiz),
+        })),
         bookmarks: data.bookmarks,
-        saved: data.quizzes.filter((q) => data.bookmarks.includes(q.id)),
+        saved: data.quizzes
+          .filter((q) => data.bookmarks.includes(q.id))
+          .map((quiz) => ({ ...quiz, plays: playCount(data, quiz) })),
         attempts: [
           ...data.attempts
             .filter((a) => a.result && !a.preview)
@@ -292,9 +307,9 @@ export function offlineRequest<T>(
         );
     }
     if (path === "/quizzes" && method === "GET")
-      return data.quizzes.filter(
-        (q) => q.status === "published" && q.visibility === "public",
-      );
+      return data.quizzes
+        .filter((q) => q.status === "published" && q.visibility === "public")
+        .map((quiz) => ({ ...quiz, plays: playCount(data, quiz) }));
     if (path === "/quizzes" && method === "POST") {
       const quiz = prepareQuiz({
         title: "Untitled quiz",
@@ -378,6 +393,7 @@ export function offlineRequest<T>(
         const updated = prepareQuiz(body);
         updated.id = q.id;
         updated.created = q.created;
+        updated.plays = playCount(data, q);
         updated.visibility = ["private", "unlisted", "public"].includes(
           body.visibility,
         )
@@ -387,6 +403,17 @@ export function offlineRequest<T>(
         updated.questions!.forEach((question, i) => {
           question.id = body.questions[i].id || question.id;
         });
+        if (
+          updated.status === "published" &&
+          updated.questions!.some(
+            (question) =>
+              ["multiple", "boolean"].includes(question.type) &&
+              hasDuplicateOptions(question),
+          )
+        )
+          throw new Error(
+            "Answer choices must be different. Rename or remove duplicate choices before publishing.",
+          );
         if (
           updated.status === "published" &&
           (!updated.questions!.length ||
@@ -411,9 +438,7 @@ export function offlineRequest<T>(
       }
       return {
         ...q,
-        plays: data.attempts.filter(
-          (a) => a.quiz.id === q.id && a.result && !a.preview,
-        ).length,
+        plays: playCount(data, q),
       };
     }
     if (parts[0] === "attempts") {

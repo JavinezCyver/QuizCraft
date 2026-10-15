@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchesAnswer, correctIndices } from "../src/lib/questions.ts";
+import {
+  matchesAnswer,
+  correctIndices,
+  matchesSelectedOptions,
+  reorderOptions,
+  optionIndices,
+  hasDuplicateOptions,
+  allowsMultipleSelections,
+} from "../src/lib/questions.ts";
 
 test("multiple choice requires all correct answers and rejects extra choices", () => {
   const question = { type: "multiple", accepted: ["Mars", "Earth"] };
@@ -52,4 +60,59 @@ test("legacy malformed correct-choice metadata cannot crash the editor", () => {
       [1],
     );
   }
+});
+
+test("choice identity survives shuffling even when labels are identical", () => {
+  const question = {
+    type: "multiple",
+    options: ["Same", "Same", "Other"],
+    accepted: ["Same"],
+    correctOptions: [0],
+  };
+  const shuffled = reorderOptions(question, [1, 2, 0]);
+  assert.deepEqual(shuffled.options, ["Same", "Other", "Same"]);
+  assert.deepEqual(shuffled.correctOptions, [2]);
+  assert.equal(matchesSelectedOptions(shuffled, [0]), false);
+  assert.equal(matchesSelectedOptions(shuffled, [2]), true);
+  assert.equal(matchesSelectedOptions(shuffled, [0, 2]), false);
+  assert.deepEqual(
+    optionIndices(question, ["Same", "Other", "Same"]),
+    [0, 2, 1],
+  );
+});
+
+test("duplicate choice validation ignores case and extra spaces", () => {
+  assert.equal(
+    hasDuplicateOptions({ options: ["Mars", "  MARS ", "Earth"] }),
+    true,
+  );
+  assert.equal(
+    hasDuplicateOptions({ options: ["Bruce  Wayne", "bruce wayne"] }),
+    true,
+  );
+  assert.equal(
+    hasDuplicateOptions({ options: ["Mars", "Earth", "", ""] }),
+    false,
+  );
+});
+
+test("multiple selection follows the number of marked correct choices", () => {
+  const card = { type: "multiple", options: ["A", "B", "C"], accepted: ["A"] };
+  assert.equal(allowsMultipleSelections(card), false);
+  assert.equal(
+    allowsMultipleSelections({ ...card, correctOptions: [0, 2] }),
+    true,
+  );
+  assert.equal(
+    allowsMultipleSelections({ ...card, accepted: ["A", "C"] }),
+    true,
+  );
+  assert.equal(
+    allowsMultipleSelections({
+      ...card,
+      type: "boolean",
+      correctOptions: [0, 1],
+    }),
+    false,
+  );
 });

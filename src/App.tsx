@@ -199,7 +199,15 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
   }, []);
   const refreshLibrary = () =>
     api<Library>("/library")
-      .then(setLibrary)
+      .then((library) => {
+        setLibrary(library);
+        setQuizzes(
+          library.quizzes.filter(
+            (quiz) =>
+              quiz.status === "published" && quiz.visibility === "public",
+          ),
+        );
+      })
       .catch(() => {});
   async function load() {
     setLoading(true);
@@ -419,7 +427,7 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
           ) / totalAttempts,
         )
       : 0;
-  const showCreateQuiz = !["dashboard", "bookmarks", "history"].includes(view);
+  const showCreateQuiz = view === "quizzes";
   const title =
     view === "bookmarks"
       ? "Your next discoveries"
@@ -536,13 +544,6 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
             <span className="community-note">
               <span /> Works fully offline
             </span>
-            {showCreateQuiz && !["home", "quizzes"].includes(view) && (
-              <Button size="sm" onClick={createQuiz} aria-label="Create a Quiz">
-                <Plus size={16} />
-                <span className="create-label-full">Create a Quiz</span>
-                <span className="create-label-mobile">Create</span>
-              </Button>
-            )}
           </div>
         </header>
         <main>
@@ -554,15 +555,18 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
                 navigate("quizzes");
                 void load();
               }}
-              onPublished={async () => {
-                navigate("home");
+              onPublished={async (published) => {
+                navigate(
+                  published.visibility === "public" ? "home" : "quizzes",
+                );
                 setSort("newest");
                 await load();
-                requestAnimationFrame(() => {
-                  document
-                    .getElementById("explore")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                });
+                if (published.visibility === "public")
+                  requestAnimationFrame(() => {
+                    document
+                      .getElementById("explore")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  });
               }}
               onPreview={(q) => {
                 setFlashcardsReturnView("quizzes");
@@ -578,8 +582,9 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
             <>
               {cards(studyQuizzes, true)}
               <Flashcards
-                key={activeQuiz.id}
+                key={`${activeQuiz.id}-${activeQuiz.preview ? "preview" : "study"}`}
                 quizId={activeQuiz.id}
+                previewQuiz={activeQuiz.preview ? activeQuiz : undefined}
                 backLabel={`Back to ${navItems.find((item) => item.id === flashcardsReturnView)?.label.toLowerCase() || "discover"}`}
                 onBack={() => navigate(flashcardsReturnView)}
                 onEdit={() => {
@@ -681,8 +686,8 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
                   <Empty
                     title="Your library starts here"
                     text="Create your first quiz or import a quiz file in Settings. Your questions and answers stay on this device."
-                    action={createQuiz}
-                    label="Create a quiz"
+                    action={() => navigate("quizzes")}
+                    label="Open My quizzes"
                   />
                 ) : (
                   <div className="empty-state panel">

@@ -5,7 +5,7 @@ export type InlinePart =
 export function parseQuestionText(text: string, depth = 0): InlinePart[] {
   if (depth >= 20) return [{ type: "text", text }];
   const pattern =
-    /\*\*([\s\S]+?)\*\*|(?<![\p{L}\p{N}])_([^_]+?)_(?![\p{L}\p{N}])|<u>([\s\S]+?)<\/u>/gu;
+    /\*\*([\s\S]+?)\*\*|(?<![\p{L}\p{N}])_([^_]+?)_(?![\p{L}\p{N}])|<u>([\s\S]+?)<\/u>|<i>([\s\S]+?)<\/i>/gu;
   const parts: InlinePart[] = [];
   let end = 0;
   for (const match of text.matchAll(pattern)) {
@@ -15,10 +15,13 @@ export function parseQuestionText(text: string, depth = 0): InlinePart[] {
       type:
         match[1] !== undefined
           ? "bold"
-          : match[2] !== undefined
+          : match[2] !== undefined || match[4] !== undefined
             ? "italic"
             : "underline",
-      children: parseQuestionText(match[1] ?? match[2] ?? match[3], depth + 1),
+      children: parseQuestionText(
+        match[1] ?? match[2] ?? match[3] ?? match[4],
+        depth + 1,
+      ),
     });
     end = match.index! + match[0].length;
   }

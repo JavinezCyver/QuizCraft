@@ -38,7 +38,7 @@ export function Studio({
 }: {
   id: string;
   onBack: () => void;
-  onPublished: () => Promise<void>;
+  onPublished: (quiz: Quiz) => Promise<void>;
   onPreview: (q: Quiz) => void;
   notify: (s: string) => void;
 }) {
@@ -224,14 +224,18 @@ export function Studio({
       await api("/quizzes/" + id, "PUT", {
         ...quiz,
         status: publish ? "published" : "draft",
-        visibility: publish ? "public" : quiz.visibility,
+        visibility: quiz.visibility,
       });
       setSaving(publish ? "Published" : "Draft saved");
       setError("");
       dirty.current = false;
       if (publish) {
-        notify("Quiz published to Discover on this device.");
-        await onPublished();
+        notify(
+          quiz.visibility === "public"
+            ? "Quiz published to Discover on this device."
+            : "Quiz ready in My quizzes.",
+        );
+        await onPublished(quiz);
       }
       if (preview) onPreview({ ...quiz, preview: true });
       else if (!publish) {

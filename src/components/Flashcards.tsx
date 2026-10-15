@@ -17,6 +17,11 @@ import { plainQuestionText } from "../lib/question-format";
 import { highlightAnswer } from "../lib/answer-highlight";
 import { pendingReviewIds, type ReviewRating } from "../lib/review";
 import {
+  allowsMultipleSelections,
+  optionIndices,
+  reorderOptions,
+} from "../lib/questions";
+import {
   loadStudyProgress,
   saveStudyProgress,
   recordStudyCompletion,
@@ -57,29 +62,34 @@ function shuffled<T>(values: T[]): T[] {
   }
   return copy;
 }
-function studyDeck(quiz: Quiz): Quiz {
+function studyDeck(quiz: Quiz) {
   const questions = quiz.settings.randomQuestions
     ? shuffled(quiz.questions || [])
     : [...(quiz.questions || [])];
-  return {
+  const orders: Record<string, number[]> = {};
+  const deck = {
     ...quiz,
-    questions: questions.map((question) => ({
-      ...question,
-      options:
+    questions: questions.map((question) => {
+      const indices = question.options.map((_, index) => index);
+      orders[question.id] =
         quiz.settings.randomAnswers && question.type === "multiple"
-          ? shuffled(question.options)
-          : [...question.options],
-    })),
+          ? shuffled(indices)
+          : indices;
+      return reorderOptions(question, orders[question.id]);
+    }),
   };
+  return { deck, orders };
 }
 
 export function Flashcards({
   quizId,
+  previewQuiz,
   onBack,
   backLabel,
   onEdit,
 }: {
   quizId: string;
+  previewQuiz?: Quiz;
   onBack: () => void;
   backLabel: string;
   onEdit: () => void;
@@ -102,13 +112,15 @@ export function Flashcards({
     [deadline, setDeadline] = useState<number | null>(null),
     [now, setNow] = useState(Date.now());
   const sourceQuiz = useRef<Quiz | null>(null);
+  const sourceOptions = useRef<Record<string, number[]>>({});
   const sourceSignature = useRef("");
   const sessionIdentity = useRef({ id: "", started: 0 });
   const expired = !complete && deadline !== null && now >= deadline;
   const canReveal = quiz?.settings.showAnswers !== false && !expired;
   function restart() {
     if (!sourceQuiz.current || finishing) return;
-    const deck = studyDeck(sourceQuiz.current);
+    const { deck, orders } = studyDeck(sourceQuiz.current);
+    sourceOptions.current = orders;
     setQuiz(deck);
     setSequence(deck.questions!.map((question) => question.id));
     setRatings({});
@@ -138,12 +150,17 @@ export function Flashcards({
     ignoreClickUntil = useRef(0);
   useEffect(() => {
     let canceled = false;
-    api<Quiz>("/quizzes/" + quizId)
+    (previewQuiz
+      ? Promise.resolve(previewQuiz)
+      : api<Quiz>("/quizzes/" + quizId)
+    )
       .then(async (q) => {
         if (canceled) return;
         if (!q.questions)
           throw new Error("Flashcards are available for quizzes you create.");
-        const { signature, progress: saved } = await loadStudyProgress(q);
+        const { signature, progress: saved } = previewQuiz
+          ? { signature: "", progress: null }
+          : await loadStudyProgress(q);
         if (canceled) return;
         sourceQuiz.current = q;
         sourceSignature.current = signature;
@@ -151,18 +168,21 @@ export function Flashcards({
           id: saved?.sessionId || crypto.randomUUID(),
           started: saved?.started || Date.now(),
         };
+        const prepared = studyDeck(q);
+        sourceOptions.current = prepared.orders;
         const deck = saved
           ? {
               ...q,
               questions: saved.questionOrder.map((id) => {
                 const card = q.questions!.find((card) => card.id === id)!;
-                return {
-                  ...card,
-                  options: saved.optionOrder[id] || card.options,
-                };
+                const order =
+                  saved.optionIndices?.[id] ??
+                  optionIndices(card, saved.optionOrder[id]);
+                sourceOptions.current[id] = order;
+                return reorderOptions(card, order);
               }),
             }
-          : studyDeck(q);
+          : prepared.deck;
         setQuiz(deck);
         setSequence(
           saved?.sequence ?? deck.questions!.map((question) => question.id),
@@ -172,7 +192,17 @@ export function Flashcards({
         setComplete(saved?.complete ?? false);
         setIndex(saved?.index ?? 0);
         setFlipped(false);
-        setSelections(saved?.selections ?? {});
+        setSelections(
+          Object.fromEntries(
+            Object.entries(saved?.selections ?? {}).map(([id, selected]) => {
+              const card = deck.questions.find((card) => card.id === id)!;
+              return [
+                id,
+                allowsMultipleSelections(card) ? selected : selected.slice(-1),
+              ];
+            }),
+          ),
+        );
         setTypedAnswers(saved?.typedAnswers ?? {});
         setShowRequired(saved?.showRequired ?? false);
         const started = Date.now();
@@ -194,7 +224,7 @@ export function Flashcards({
     return () => {
       canceled = true;
     };
-  }, [quizId]);
+  }, [quizId, previewQuiz]);
   function progressSnapshot(isComplete = complete): StudyProgress {
     return {
       signature: sourceSignature.current,
@@ -204,6 +234,7 @@ export function Flashcards({
       optionOrder: Object.fromEntries(
         quiz!.questions!.map((card) => [card.id, card.options]),
       ),
+      optionIndices: sourceOptions.current,
       sequence,
       index,
       ratings,
@@ -216,7 +247,7 @@ export function Flashcards({
     };
   }
   useEffect(() => {
-    if (loading || error || !quiz || !sourceQuiz.current) return;
+    if (previewQuiz || loading || error || !quiz || !sourceQuiz.current) return;
     let active = true;
     void saveStudyProgress(quiz.id, progressSnapshot())
       .then(() => {
@@ -244,6 +275,7 @@ export function Flashcards({
     complete,
     showRequired,
     deadline,
+    previewQuiz,
   ]);
   const allQuestions = quiz?.questions || [];
   const questions = allQuestions.filter(
@@ -252,6 +284,7 @@ export function Flashcards({
   const question = questions.find(
     (question) => question.id === sequence[index],
   );
+  const multipleSelections = !!question && allowsMultipleSelections(question);
   function isAnswered(card: Question) {
     return ["multiple", "boolean"].includes(card.type)
       ? !!selections[card.id]?.length
@@ -319,7 +352,11 @@ export function Flashcards({
         setFinishing(true);
         setSaveError("");
         try {
-          await recordStudyCompletion(quiz!, progressSnapshot(true));
+          if (!previewQuiz)
+            await recordStudyCompletion(
+              sourceQuiz.current!,
+              progressSnapshot(true),
+            );
           setComplete(true);
         } catch (error) {
           setSaveError((error as Error).message);
@@ -624,7 +661,9 @@ export function Flashcards({
                       >
                         <span className="muted">
                           {question.type === "multiple"
-                            ? "Select all correct answers, then reveal to check."
+                            ? multipleSelections
+                              ? "Select all correct answers, then reveal to check."
+                              : "Select one answer, then reveal to check."
                             : "Select True or False, then reveal to check."}
                         </span>
                         {question.options.map((option, i) => (
@@ -646,14 +685,11 @@ export function Flashcards({
                                 const selected = current[question.id] || [];
                                 return {
                                   ...current,
-                                  [question.id]:
-                                    question.type === "boolean"
-                                      ? [i]
-                                      : selected.includes(i)
-                                        ? selected.filter(
-                                            (value) => value !== i,
-                                          )
-                                        : [...selected, i],
+                                  [question.id]: !multipleSelections
+                                    ? [i]
+                                    : selected.includes(i)
+                                      ? selected.filter((value) => value !== i)
+                                      : [...selected, i],
                                 };
                               });
                             }}

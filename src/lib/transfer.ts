@@ -2,6 +2,7 @@ import { prepareQuiz, withData, type OfflineData } from "./offline";
 import type { Quiz, History } from "./api";
 import {
   studySignature,
+  legacyStudySignature,
   validStudyProgress,
   type StudyProgress,
 } from "./study-progress";
@@ -89,6 +90,7 @@ export async function restoreBackup(text: string) {
       // Ignore progress for questions that had already been edited before export.
       if (
         saved.signature !== signature &&
+        saved.signature !== (await legacyStudySignature(original)) &&
         saved.signature !==
           JSON.stringify([original.questions, original.settings])
       )

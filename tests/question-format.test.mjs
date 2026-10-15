@@ -51,3 +51,23 @@ test("underline preserves nested formatting and line breaks without interpreting
     { type: "text", text: literal },
   ]);
 });
+
+test("explicit italic markup supports partial words and retains legacy underscore text", () => {
+  assert.deepEqual(parseQuestionText("B<i>atm</i>an"), [
+    { type: "text", text: "B" },
+    { type: "italic", children: [{ type: "text", text: "atm" }] },
+    { type: "text", text: "an" },
+  ]);
+  assert.equal(
+    plainQuestionText("<i>Bat</i>man and Bat<i>man</i>"),
+    "Batman and Batman",
+  );
+  assert.equal(
+    plainQuestionText("fill_in_the_blank _legacy_"),
+    "fill_in_the_blank legacy",
+  );
+  assert.equal(
+    plainQuestionText('<i onclick="alert(1)">text</i>'),
+    '<i onclick="alert(1)">text</i>',
+  );
+});

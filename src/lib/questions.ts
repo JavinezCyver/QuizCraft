@@ -1,5 +1,51 @@
 import type { Question } from "./api";
 
+export function allowsMultipleSelections(question: Question): boolean {
+  return question.type === "multiple" && correctIndices(question).length > 1;
+}
+
+export function optionIndices(question: Question, options: string[]): number[] {
+  const available = question.options.map((_, index) => index);
+  return options.map((option) => {
+    const position = available.findIndex(
+      (index) => question.options[index] === option,
+    );
+    return available.splice(position, 1)[0];
+  });
+}
+
+export function reorderOptions(question: Question, order: number[]): Question {
+  const correct = new Set(correctIndices(question));
+  return {
+    ...question,
+    options: order.map((index) => question.options[index]),
+    correctOption: null,
+    correctOptions: order.flatMap((original, index) =>
+      correct.has(original) ? [index] : [],
+    ),
+  };
+}
+
+export function matchesSelectedOptions(
+  question: Question,
+  selected: number[],
+): boolean {
+  const expected = new Set(correctIndices(question));
+  const actual = new Set(selected);
+  return (
+    expected.size > 0 &&
+    expected.size === actual.size &&
+    [...expected].every((index) => actual.has(index))
+  );
+}
+
+export function hasDuplicateOptions(question: Question): boolean {
+  const options = question.options
+    .map((option) => option.trim().toLocaleLowerCase().replace(/\s+/g, " "))
+    .filter(Boolean);
+  return new Set(options).size !== options.length;
+}
+
 export function correctIndices(question: Question): number[] {
   const indices =
     (Array.isArray(question.correctOptions)

@@ -53,7 +53,7 @@ function serialize(parent: Node): string {
       content &&
       (["I", "EM"].includes(node.tagName) || node.style.fontStyle === "italic")
     )
-      content = wrap(content, "_");
+      content = wrap(content, "<i>", "</i>");
     if (
       content &&
       (node.tagName === "U" ||
@@ -82,11 +82,6 @@ export function QuestionEditor({
     italic: false,
     underline: false,
   });
-  const currentFormat = useRef({
-    bold: false,
-    italic: false,
-    underline: false,
-  });
   const id = useId();
   function selectionChanged() {
     const selection = window.getSelection();
@@ -104,7 +99,6 @@ export function QuestionEditor({
       italic: document.queryCommandState("italic"),
       underline: document.queryCommandState("underline"),
     };
-    currentFormat.current = next;
     setFormat(next);
   }
   function sync() {
@@ -157,8 +151,10 @@ export function QuestionEditor({
   }
   function toggle(style: "bold" | "italic" | "underline") {
     selectionChanged();
-    const enabled = !currentFormat.current[style];
     focus();
+    // Read the restored editor selection, not a stale state from before a touch blur.
+    const mixed = document.queryCommandIndeterm(style);
+    const enabled = mixed || !document.queryCommandState(style);
     if (enabled) {
       for (const other of ["bold", "italic", "underline"]) {
         if (other === style) continue;
@@ -171,6 +167,8 @@ export function QuestionEditor({
         if (document.queryCommandState(other)) document.execCommand(other);
       }
     }
+    // Browsers disagree on whether a mixed underline command first clears or applies it.
+    if (mixed) document.execCommand(style);
     if (document.queryCommandState(style) !== enabled)
       document.execCommand(style);
     sync();
@@ -196,6 +194,7 @@ export function QuestionEditor({
           aria-label="Bold"
           aria-pressed={format.bold}
           title="Bold (Ctrl+B)"
+          onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => toggle("bold")}
         >
@@ -207,6 +206,7 @@ export function QuestionEditor({
           aria-label="Italic"
           aria-pressed={format.italic}
           title="Italic (Ctrl+I)"
+          onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => toggle("italic")}
         >
@@ -218,6 +218,7 @@ export function QuestionEditor({
           aria-label="Underline"
           aria-pressed={format.underline}
           title="Underline (Ctrl+U)"
+          onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => toggle("underline")}
         >

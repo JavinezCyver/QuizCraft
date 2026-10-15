@@ -1,7 +1,13 @@
 import type { Quiz, History } from "./api";
 import type { ReviewRating } from "./review";
 import { withData } from "./offline";
-import { matchesAnswer } from "./questions";
+import {
+  matchesAnswer,
+  matchesSelectedOptions,
+  optionIndices,
+  reorderOptions,
+  correctIndices,
+} from "./questions";
 
 export type StudyProgress = {
   sessionId?: string;
@@ -9,6 +15,7 @@ export type StudyProgress = {
   signature: string;
   questionOrder: string[];
   optionOrder: Record<string, string[]>;
+  optionIndices?: Record<string, number[]>;
   sequence: string[];
   index: number;
   ratings: Record<string, ReviewRating>;
@@ -20,15 +27,42 @@ export type StudyProgress = {
   deadline: number | null;
 };
 
-export async function studySignature(quiz: Quiz) {
+async function fingerprint(value: unknown) {
   // Keep image data out of the progress record while still detecting edits.
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(JSON.stringify([quiz.questions, quiz.settings])),
+    new TextEncoder().encode(JSON.stringify(value)),
   );
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
+}
+
+export function studySignature(quiz: Quiz) {
+  return fingerprint([
+    quiz.questions?.map((card) => [
+      card.id,
+      card.type,
+      card.prompt,
+      card.options,
+      card.accepted,
+      correctIndices(card),
+      card.explanation || "",
+      card.questionImage || "",
+      card.answerImage || "",
+      card.points,
+    ]),
+    [
+      quiz.settings.showAnswers !== false,
+      quiz.settings.time || 0,
+      !!quiz.settings.randomQuestions,
+      !!quiz.settings.randomAnswers,
+    ],
+  ]);
+}
+
+export function legacyStudySignature(quiz: Quiz) {
+  return fingerprint([quiz.questions, quiz.settings]);
 }
 
 export function validStudyProgress(
@@ -71,7 +105,8 @@ export function validStudyProgress(
       (answer) => typeof answer === "string",
     ) ||
     !validKeys(p.selections) ||
-    !validKeys(p.optionOrder)
+    !validKeys(p.optionOrder) ||
+    (p.optionIndices !== undefined && !validKeys(p.optionIndices))
   )
     return false;
   return cards.every((card) => {
@@ -85,6 +120,22 @@ export function validStudyProgress(
     )
       return false;
     const selected = p.selections[card.id] ?? [];
+    if (p.optionIndices !== undefined) {
+      const order = p.optionIndices[card.id];
+      if (
+        !Array.isArray(order) ||
+        order.length !== card.options.length ||
+        new Set(order).size !== card.options.length ||
+        !order.every(
+          (original, index) =>
+            Number.isInteger(original) &&
+            original >= 0 &&
+            original < card.options.length &&
+            card.options[original] === options[index],
+        )
+      )
+        return false;
+    }
     if (
       !Array.isArray(selected) ||
       !selected.every(
@@ -102,7 +153,10 @@ export function validStudyProgress(
 }
 
 export async function loadStudyProgress(quiz: Quiz) {
-  const signature = await studySignature(quiz);
+  const [signature, legacy] = await Promise.all([
+    studySignature(quiz),
+    legacyStudySignature(quiz),
+  ]);
   return withData((data) => {
     const saved = data.studyProgress?.[quiz.id];
     // Editing questions or settings starts a fresh session with the updated deck.
@@ -110,6 +164,7 @@ export async function loadStudyProgress(quiz: Quiz) {
     const matches =
       saved &&
       (saved.signature === signature ||
+        saved.signature === legacy ||
         saved.signature === JSON.stringify([quiz.questions, quiz.settings]));
     return {
       signature,
@@ -119,6 +174,7 @@ export async function loadStudyProgress(quiz: Quiz) {
 }
 
 export function recordStudyCompletion(quiz: Quiz, progress: StudyProgress) {
+  if (quiz.preview) return Promise.resolve();
   if (
     !progress.complete ||
     !progress.sessionId ||
@@ -130,16 +186,16 @@ export function recordStudyCompletion(quiz: Quiz, progress: StudyProgress) {
     );
   const cards = quiz.questions || [];
   const correct = cards.filter((card) => {
-    const selected = (progress.selections[card.id] || []).map(
-      (index) => progress.optionOrder[card.id][index],
-    );
-    const answer =
-      card.type === "multiple"
-        ? JSON.stringify(selected)
-        : card.type === "boolean"
-          ? selected[0] || ""
-          : progress.typedAnswers[card.id] || "";
-    return matchesAnswer(card, answer);
+    if (["multiple", "boolean"].includes(card.type)) {
+      const order =
+        progress.optionIndices?.[card.id] ??
+        optionIndices(card, progress.optionOrder[card.id]);
+      return matchesSelectedOptions(
+        reorderOptions(card, order),
+        progress.selections[card.id] || [],
+      );
+    }
+    return matchesAnswer(card, progress.typedAnswers[card.id] || "");
   });
   const entry: History = {
     id: progress.sessionId,
@@ -155,11 +211,13 @@ export function recordStudyCompletion(quiz: Quiz, progress: StudyProgress) {
     pending: 0,
   };
   return withData((data) => {
-    if (!data.quizzes.some((card) => card.id === quiz.id))
-      throw new Error("This quiz is no longer on this device.");
+    const storedQuiz = data.quizzes.find((card) => card.id === quiz.id);
+    if (!storedQuiz) throw new Error("This quiz is no longer on this device.");
     data.studySessions ??= [];
-    if (!data.studySessions.some((session) => session.id === entry.id))
+    if (!data.studySessions.some((session) => session.id === entry.id)) {
       data.studySessions.push({ ...entry, name: data.user.name });
+      storedQuiz.plays = (storedQuiz.plays || 0) + 1;
+    }
     data.studyProgress ??= {};
     data.studyProgress[quiz.id] = progress;
   });

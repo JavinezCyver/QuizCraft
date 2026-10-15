@@ -485,6 +485,63 @@ test("mixed flashcard deck saves multiple correct choices and previews every typ
   ).toBeChecked();
 });
 
+test("multiple choice automatically uses single or multiple selection from the marked answers", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await createQuiz(page);
+  await page
+    .getByRole("button", { name: "Add first question", exact: true })
+    .tap();
+  await page
+    .getByRole("textbox", { name: "Your question", exact: true })
+    .fill("Choose the correct characters");
+  for (const [index, option] of [
+    "sasuke",
+    "kakashi",
+    "naruto",
+    "hakdog",
+  ].entries()) {
+    await page
+      .getByRole("textbox", { name: `Option ${index + 1}`, exact: true })
+      .fill(option);
+  }
+  await page
+    .getByRole("checkbox", { name: "Mark option 1 correct", exact: true })
+    .check();
+  await page.getByRole("button", { name: "Preview", exact: true }).tap();
+  const sasuke = page.getByRole("button", { name: "A. sasuke", exact: true });
+  const kakashi = page.getByRole("button", { name: "B. kakashi", exact: true });
+  const naruto = page.getByRole("button", { name: "C. naruto", exact: true });
+  await sasuke.tap();
+  await kakashi.tap();
+  await expect(sasuke).toHaveAttribute("aria-pressed", "false");
+  await expect(kakashi).toHaveAttribute("aria-pressed", "true");
+  await kakashi.tap();
+  await expect(kakashi).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Reveal answer", exact: true }).tap();
+  await expect(
+    page.locator('.flashcard-back[aria-hidden="false"] .flashcard-text'),
+  ).toHaveText("sasuke");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Edit quiz", exact: true }).tap();
+  await page
+    .getByRole("checkbox", { name: "Mark option 3 correct", exact: true })
+    .check();
+  await page.getByRole("button", { name: "Preview", exact: true }).tap();
+  await sasuke.tap();
+  await naruto.tap();
+  await expect(sasuke).toHaveAttribute("aria-pressed", "true");
+  await expect(naruto).toHaveAttribute("aria-pressed", "true");
+  await sasuke.tap();
+  await expect(sasuke).toHaveAttribute("aria-pressed", "false");
+  await expect(naruto).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Reveal answer", exact: true }).tap();
+  await expect(
+    page.locator('.flashcard-back[aria-hidden="false"] .flashcard-text'),
+  ).toHaveText("sasuke, naruto");
+});
+
 test("questions support bold and italic formatting, shortcuts, and saved flashcard display", async ({
   page,
 }) => {
@@ -618,6 +675,62 @@ test("bold and italic buttons stay on for new typing until toggled off", async (
   await expect
     .poll(() => prompt.textContent())
     .toBe("Bruce Wayne is Batman.\nNext line");
+});
+
+test.describe("mobile formatting with the on-screen keyboard", () => {
+  test.use({
+    isMobile: true,
+    hasTouch: true,
+    viewport: { width: 390, height: 844 },
+    userAgent:
+      "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",
+  });
+
+  for (const style of ["Bold", "Italic", "Underline"]) {
+    test(`${style} survives tapping the field and returns to normal on a second tap`, async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await createQuiz(page);
+      await page
+        .getByRole("button", { name: "Add first question", exact: true })
+        .tap();
+      const field = page.getByRole("textbox", {
+        name: "Your question",
+        exact: true,
+      });
+      const button = page.getByRole("button", { name: style, exact: true });
+      const tag =
+        style === "Bold" ? "b, strong" : style === "Italic" ? "i, em" : "u";
+      await button.tap();
+      await expect(button).toHaveAttribute("aria-pressed", "true");
+      // Mobile users tap the field and type through an IME, without keydown events.
+      await field.tap();
+      await page.keyboard.insertText("Styled");
+      await expect(field.locator(tag)).toHaveText("Styled");
+      if (style === "Italic") {
+        await expect(field.locator(tag)).toHaveCSS("font-style", "italic");
+        expect(
+          await field.evaluate(
+            (element) => getComputedStyle(element).fontSynthesis,
+          ),
+        ).toContain("style");
+      }
+      await button.tap();
+      await expect(button).toHaveAttribute("aria-pressed", "false");
+      await page.keyboard.insertText(" plain");
+      await expect(field).toHaveText("Styled plain");
+      await expect(field.locator(tag)).toHaveText("Styled");
+      await field.press("Control+a");
+      await button.tap();
+      await expect(field.locator(tag)).toHaveText("Styled plain");
+      await button.tap();
+      await expect(button).toHaveAttribute("aria-pressed", "false");
+      await expect(field.locator(tag)).toHaveCount(0);
+      await page.keyboard.insertText("Normal");
+      await expect(field).toHaveText("Normal");
+    });
+  }
 });
 
 test("Underline toggles, shortcuts, and saved flashcards work on a narrow screen", async ({
