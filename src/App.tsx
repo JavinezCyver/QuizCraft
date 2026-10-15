@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowRight,
@@ -42,6 +42,7 @@ import { Dialog } from "./components/ui/dialog";
 import { Studio } from "./components/Studio";
 import { Flashcards } from "./components/Flashcards";
 import { AppUpdates } from "./components/AppUpdates";
+import { Toast } from "./components/Toast";
 import { api, type Quiz, type User, type Library } from "./lib/api";
 import { localUser } from "./lib/offline";
 import {
@@ -177,7 +178,7 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
     [transferText, setTransferText] = useState(""),
     [transferError, setTransferError] = useState(""),
     [busy, setBusy] = useState(false),
-    [toast, setToast] = useState(""),
+    [toast, setToast] = useState<{ id: number; message: string } | null>(null),
     [mobile, setMobile] = useState(false),
     [dark, setDark] = useState(
       localStorage.getItem("quizcraft-theme") === "dark",
@@ -190,10 +191,11 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
     [deleting, setDeleting] = useState(false),
     [deleteError, setDeleteError] = useState(""),
     [grading, setGrading] = useState<any[]>([]);
-  const notify = (message: string) => {
-    setToast(message);
-    setTimeout(() => setToast(""), 4500);
-  };
+  const toastId = useRef(0);
+  const notify = (message: string) => setToast({ id: ++toastId.current, message });
+  const dismissToast = useCallback((id: number) => {
+    setToast((current) => (current?.id === id ? null : current));
+  }, []);
   const refreshLibrary = () =>
     api<Library>("/library")
       .then(setLibrary)
@@ -1339,19 +1341,12 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
         </div>
       </Dialog>
       {toast && (
-        <div className="toast" role="status">
-          <span>
-            <Check size={17} />
-          </span>
-          {toast}
-          <button
-            className="icon-btn"
-            aria-label="Dismiss notification"
-            onClick={() => setToast("")}
-          >
-            <X size={16} />
-          </button>
-        </div>
+        <Toast
+          key={toast.id}
+          id={toast.id}
+          message={toast.message}
+          onDismiss={dismissToast}
+        />
       )}
     </div>
   );
