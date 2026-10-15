@@ -1,17 +1,20 @@
 # QuizCraft
 
-QuizCraft is now an offline quiz and flashcard app. Anyone can use it immediately, without registration, login, a hosted API, or an internet connection. The React interface is shared by the web app and the Rust + Tauri Android app.
+QuizCraft is an offline flashcard app for personal study. Anyone can use it immediately, without registration, login, a hosted API, or an internet connection. The React interface is shared by the web app and the Rust + Tauri Android app.
 
 Download the signed Android APK from [GitHub Releases](https://github.com/JavinezCyver/QuizCraft/releases/latest). The Android release supports ARM64 phones running Android 7.0 or newer.
 
 ## What works offline
 
 - Start with a clean, empty library. No demo quizzes, questions, answers, or creator data are bundled.
-- Create and edit quizzes, autosave drafts, manage categories, duplicate and delete quizzes.
-- Study flashcards, take timed quizzes, review answers, and receive scores.
+- Create and edit flashcard collections, autosave drafts, manage categories, and delete collections.
+- Add multiple choice questions with multiple correct answers, true or false questions, and fill in the blank questions.
+- Format question text with bold or italic, and attach pictures to questions and answers.
+- Select choices or type an answer, then use Reveal answer to compare it with the accepted answer. Matching words are highlighted in both typed and accepted answers.
+- Rate cards BAD, GOOD, or SATISFIED. Cards needing review return after each pass; finishing requires an answer and SATISFIED on every card.
+- Resume saved study progress, filter cards by rating, and review completed session scores.
 - Save bookmarks, quiz history, a display name, and appearance on the device.
-- Review short answers and assign points in My quizzes.
-- Export/import quiz files and back up/restore the collection and completed history in Settings.
+- Import quiz files and back up/restore the collection, study progress, and completed history in Settings.
 
 Data lives in the app's IndexedDB database, `quizcraft-offline`. Each update uses a transaction, so simultaneous browser tabs cannot overwrite each other's changes. Quizzes and results are specific to the device/browser; they are not sent to a server or automatically synchronized. Removing the app or clearing site storage removes local data. Use Settings > Export backup to keep a copy.
 
@@ -75,13 +78,13 @@ The release key differs from the debug key. Export a backup in Settings before u
 
 ## Transfer and backup
 
-Settings offers Export backup and Import quizzes / restore backup. JSON exports contain local quiz answers and completed attempt history. Import quizzes adds new copies with fresh identifiers. Restore backup explicitly replaces the local collection, bookmarks, display name, and history; export the current collection first to retain it. In-progress attempts are not included in exported backups. Appearance remains the current device's preference.
+Settings offers Export backup and Import quizzes / restore backup. JSON backups contain local questions, answers, images, saved flashcard study progress, and completed history. Import quizzes adds new copies with fresh identifiers. Restore backup explicitly replaces the local collection, bookmarks, display name, study progress, and history; export the current collection first to retain it. Appearance remains the current device's preference.
 
-Use Download JSON in a browser. Android WebViews may not support browser downloads; the transfer dialog also provides selectable JSON text to copy or paste, plus a file picker to import JSON. Cover images are selected from local files and stored with the quiz. Remote image URLs and online moderation/sharing are replaced by local features.
+Use Download JSON in a browser. Android WebViews may not support browser downloads; the transfer dialog also provides selectable JSON text to copy or paste, plus a file picker to import JSON. Cover, question, and answer images are selected from local files and stored with the collection.
 
 ## Structure and verification
 
-- `src/lib/offline.ts`: transactional local storage, quiz management, answer scoring, timers, history, bookmarks, and manual grading.
+- `src/lib/offline.ts`: transactional local storage, collection management, answer scoring, study progress, history, and bookmarks.
 - `src/lib/transfer.ts`: quiz imports and collection backups.
 - `src-tauri/`: Rust Tauri shell and Android project, without the former HTTP bridge.
 - `vite.config.ts`: production offline cache generation.
@@ -91,4 +94,4 @@ Use Download JSON in a browser. Android WebViews may not support browser downloa
 npm test
 ```
 
-Builds the production app and tests offline startup/refresh, persistence, editing, scoring, manual grading, backup restore, imports, flashcards, and responsive layouts. The active Playwright suite targets the offline app. The old authentication/server browser scenarios remain as references and are not part of the offline suite. `npm run test:legacy` runs the retained Rust and HTTP API tests separately.
+Builds the production app and tests offline startup/refresh, persistence, editing, scoring, backup restore, imports, flashcards, and responsive layouts. The active Playwright suite targets the offline app. The old authentication/server browser scenarios remain as references and are not part of the offline suite. `npm run test:legacy` runs the retained Rust and HTTP API tests separately.
