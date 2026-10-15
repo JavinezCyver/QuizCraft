@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.8 - 2026-10-15
+
+- Make popup notifications smaller with compact icons, softer borders, and smooth slide-and-fade entrance and exit animations.
+- Keep notifications readable on phone and desktop screens, preserve touch-friendly dismissal, and respect reduced-motion preferences.
+- Fix earlier notification timers dismissing newer messages before their full display time.
+
+Users on version 1.0.7 can check for this release in Settings > App updates.
+
 ## 1.0.7 - 2026-10-15
 
 - Add App updates in Settings, showing installed and latest versions, release notes, and download progress.

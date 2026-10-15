@@ -1,4 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
+import appPackage from "../../package.json" with { type: "json" };
+
+const currentVersion = appPackage.version;
+const nextVersion = `${Number(currentVersion.split(".")[0]) + 1}.0.0`;
 
 async function settings(page: Page) {
   await page.goto("/");
@@ -16,7 +20,7 @@ async function settings(page: Page) {
     .click();
   return page.getByRole("region", { name: "App updates", exact: true });
 }
-const latest = (version = "1.0.8") => ({
+const latest = (version = nextVersion) => ({
   tag_name: `v${version}`,
   draft: false,
   prerelease: false,
@@ -43,11 +47,13 @@ test("Settings checks updates and shows release notes with a direct APK download
     },
   );
   const section = await settings(page);
-  await expect(section.getByText("Installed version 1.0.7")).toBeVisible();
+  await expect(
+    section.getByText(`Installed version ${currentVersion}`),
+  ).toBeVisible();
   await expect(section.getByRole("link")).toHaveCount(0);
   await section.getByRole("button", { name: "Check for updates" }).click();
   await expect(section.getByRole("status")).toHaveText(
-    "Version 1.0.8 is available.",
+    `Version ${nextVersion} is available.`,
   );
   await expect(section.getByText(latest().body)).toBeVisible();
   await expect(
@@ -67,7 +73,7 @@ test("offline update checks fail gently and can be retried without affecting sav
     (route) =>
       offline
         ? route.abort("internetdisconnected")
-        : route.fulfill({ json: latest("1.0.7") }),
+        : route.fulfill({ json: latest(currentVersion) }),
   );
   const section = await settings(page);
   await section.getByRole("button", { name: "Check for updates" }).click();
@@ -105,53 +111,56 @@ for (const width of [320, 390, 768])
     page,
   }) => {
     await page.setViewportSize({ width, height: 844 });
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, "userAgent", {
-        value: "Android QuizCraft",
-      });
-      (window as any).isTauri = true;
-      const state = {
-        phase: "idle",
-        currentVersion: "1.0.7",
-        latestVersion: "",
-        hasUpdate: false,
-        notes: "",
-        totalBytes: 1000,
-        downloadedBytes: 0,
-        canInstall: false,
-        message: "",
-        error: "",
-      };
-      let downloads = 0;
-      (window as any).__updateCalls = [];
-      (window as any).__TAURI_INTERNALS__ = {
-        invoke: async (command: string, args: { action: string }) => {
-          if (command !== "app_update")
-            throw new Error("Unexpected native command");
-          (window as any).__updateCalls.push(args.action);
-          if (args.action === "check")
-            Object.assign(state, {
-              phase: "available",
-              latestVersion: "1.0.8",
-              hasUpdate: true,
-              notes: "Improved flashcards. ".repeat(100),
-            });
-          if (args.action === "download") {
-            state.phase = "downloading";
-            downloads++;
-          }
-          if (args.action === "status" && state.phase === "downloading") {
-            state.downloadedBytes += 250;
-            if (state.downloadedBytes >= 1000) state.phase = "ready";
-          }
-          if (args.action === "allow") state.canInstall = true;
-          if (args.action === "install")
-            state.message = "Confirm the update in Android’s installer.";
-          (window as any).__downloads = downloads;
-          return { ...state };
-        },
-      };
-    });
+    await page.addInitScript(
+      ({ currentVersion, nextVersion }) => {
+        Object.defineProperty(navigator, "userAgent", {
+          value: "Android QuizCraft",
+        });
+        (window as any).isTauri = true;
+        const state = {
+          phase: "idle",
+          currentVersion,
+          latestVersion: "",
+          hasUpdate: false,
+          notes: "",
+          totalBytes: 1000,
+          downloadedBytes: 0,
+          canInstall: false,
+          message: "",
+          error: "",
+        };
+        let downloads = 0;
+        (window as any).__updateCalls = [];
+        (window as any).__TAURI_INTERNALS__ = {
+          invoke: async (command: string, args: { action: string }) => {
+            if (command !== "app_update")
+              throw new Error("Unexpected native command");
+            (window as any).__updateCalls.push(args.action);
+            if (args.action === "check")
+              Object.assign(state, {
+                phase: "available",
+                latestVersion: nextVersion,
+                hasUpdate: true,
+                notes: "Improved flashcards. ".repeat(100),
+              });
+            if (args.action === "download") {
+              state.phase = "downloading";
+              downloads++;
+            }
+            if (args.action === "status" && state.phase === "downloading") {
+              state.downloadedBytes += 250;
+              if (state.downloadedBytes >= 1000) state.phase = "ready";
+            }
+            if (args.action === "allow") state.canInstall = true;
+            if (args.action === "install")
+              state.message = "Confirm the update in Android’s installer.";
+            (window as any).__downloads = downloads;
+            return { ...state };
+          },
+        };
+      },
+      { currentVersion, nextVersion },
+    );
     const section = await settings(page);
     await section.getByRole("button", { name: "Check for updates" }).click();
     const download = section.getByRole("button", { name: /^Download update/ });
