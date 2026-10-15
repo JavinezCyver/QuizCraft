@@ -6,6 +6,7 @@ export default defineConfig({
     "mobile-carousel.spec.ts",
     "flashcard-authoring.spec.ts",
     "flashcard-responsive.spec.ts",
+    "updates.spec.ts",
   ],
   timeout: 45000,
   workers: 1,

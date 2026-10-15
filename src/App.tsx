@@ -41,6 +41,7 @@ import { Select } from "./components/ui/select";
 import { Dialog } from "./components/ui/dialog";
 import { Studio } from "./components/Studio";
 import { Flashcards } from "./components/Flashcards";
+import { AppUpdates } from "./components/AppUpdates";
 import { api, type Quiz, type User, type Library } from "./lib/api";
 import { localUser } from "./lib/offline";
 import {
@@ -1183,6 +1184,7 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
               {dark ? "Light" : "Dark"}
             </Button>
           </div>
+          {profile && <AppUpdates />}
           <Button disabled={busy}>
             Save settings
             <Check size={16} />

@@ -1,4 +1,6 @@
 # Add project specific ProGuard rules here.
+# The Rust mobile bridge loads this class by name.
+-keep class com.quizcraft.app.AppUpdatesPlugin { *; }
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #

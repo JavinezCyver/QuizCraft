@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.7 - 2026-10-15
+
+- Add App updates in Settings, showing installed and latest versions, release notes, and download progress.
+- Download Android updates inside QuizCraft and open Android's installer without visiting GitHub.
+- Verify the download checksum, package version, and signing certificate before installation. Keep verified downloads available when Settings is reopened or the app restarts.
+- Handle offline checks, retries, and Android's permission to install app updates. Existing flashcards and saved progress remain on the device.
+- Fix Settings buttons overflowing narrow phone screens.
+
+Install this version once to enable in-app updates for future releases. Android requires confirmation before installation and may ask to allow updates from QuizCraft.
+
 ## 1.0.6 - 2026-10-15
 
 - Focus study on flashcards with multiple choice, true or false, and fill in the blank questions. Multiple choice supports more than one correct answer.

@@ -2689,6 +2689,7 @@ dependencies = [
 name = "quizcraft-mobile"
 version = "1.0.0"
 dependencies = [
+ "serde_json",
  "tauri",
  "tauri-build",
 ]
