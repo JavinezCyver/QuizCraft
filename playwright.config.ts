@@ -1,7 +1,12 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/browser",
-  testMatch: ["offline.spec.ts", "mobile-carousel.spec.ts"],
+  testMatch: [
+    "offline.spec.ts",
+    "mobile-carousel.spec.ts",
+    "flashcard-authoring.spec.ts",
+    "flashcard-responsive.spec.ts",
+  ],
   timeout: 45000,
   workers: 1,
   use: {

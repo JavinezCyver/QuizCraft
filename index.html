@@ -4,10 +4,61 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width,initial-scale=1,viewport-fit=cover"
+      content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#7356e8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      #startup-splash {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 20000;
+        place-items: center;
+        padding: max(24px, env(safe-area-inset-top))
+          max(24px, env(safe-area-inset-right))
+          max(24px, env(safe-area-inset-bottom))
+          max(24px, env(safe-area-inset-left));
+        background: #191720;
+        color: #f5f1ff;
+        font-family: system-ui, sans-serif;
+        text-align: center;
+        opacity: 1;
+        transition: opacity 180ms ease;
+      }
+      #startup-splash .startup-brand {
+        display: grid;
+        justify-items: center;
+        gap: 18px;
+      }
+      #startup-splash img {
+        width: clamp(72px, 22vw, 112px);
+        height: auto;
+        max-width: 100%;
+        aspect-ratio: 1;
+      }
+      #startup-splash .startup-name {
+        font-size: clamp(24px, 6vw, 32px);
+        font-weight: 800;
+        letter-spacing: -1px;
+      }
+      #startup-splash.is-leaving {
+        opacity: 0;
+      }
+      @media (max-width: 760px), (pointer: coarse) {
+        #startup-splash {
+          display: grid;
+        }
+      }
+      html.android-app #startup-splash {
+        display: grid;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #startup-splash {
+          transition: none;
+        }
+      }
+    </style>
     <meta
       name="description"
       content="Create, share, and discover quizzes. A little curiosity can take you anywhere."
@@ -15,6 +66,12 @@
     <title>QuizCraft — Stay curious.</title>
   </head>
   <body>
+    <div id="startup-splash" role="status" aria-label="Opening QuizCraft">
+      <div class="startup-brand">
+        <img src="/favicon.svg" alt="QuizCraft logo" width="112" height="112" />
+        <span class="startup-name">QuizCraft.</span>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

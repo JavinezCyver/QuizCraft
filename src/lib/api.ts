@@ -9,9 +9,12 @@ export type User = {
 };
 export type Question = {
   correctOption?: number | null;
+  correctOptions?: number[];
   id: string;
   type: "multiple" | "boolean" | "blank" | "short";
   prompt: string;
+  questionImage?: string;
+  answerImage?: string;
   options: string[];
   accepted: string[];
   explanation: string;
@@ -49,6 +52,7 @@ export type Quiz = {
   preview?: boolean;
 };
 export type History = {
+  kind?: "flashcards";
   id: string;
   quiz_id: string;
   title: string;

@@ -1,4 +1,6 @@
-import type { Quiz, User } from "./api";
+import { matchesAnswer } from "./questions";
+import type { Quiz, User, History } from "./api";
+import type { StudyProgress } from "./study-progress";
 
 export const localUser: User = {
   id: "local",
@@ -36,10 +38,10 @@ export type OfflineData = {
   quizzes: Quiz[];
   bookmarks: string[];
   attempts: Attempt[];
+  studyProgress?: Record<string, StudyProgress>;
+  studySessions?: History[];
 };
 const clone = <T>(value: T): T => structuredClone(value);
-const normalize = (value: string) =>
-  value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 const shuffled = <T>(values: T[]) => {
   const copy = [...values];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -72,10 +74,27 @@ export function prepareQuiz(value: unknown): Quiz {
       question.points > 1000
     )
       throw new Error("Invalid question in quiz file.");
+    if (
+      (question.correctOptions !== undefined &&
+        (!Array.isArray(question.correctOptions) ||
+          !question.correctOptions.every(
+            (index) =>
+              Number.isInteger(index) &&
+              index >= 0 &&
+              index < question.options.length,
+          ))) ||
+      (question.correctOption != null &&
+        (!Number.isInteger(question.correctOption) ||
+          question.correctOption < 0 ||
+          question.correctOption >= question.options.length))
+    )
+      throw new Error("Invalid correct answer choices in quiz file.");
     return {
       ...question,
       id: crypto.randomUUID(),
       explanation: String(question.explanation || ""),
+      questionImage: embeddedImage(question.questionImage),
+      answerImage: embeddedImage(question.answerImage),
     };
   });
   return {
@@ -122,6 +141,12 @@ export function prepareQuiz(value: unknown): Quiz {
     created: new Date().toISOString(),
     plays: 0,
   };
+}
+function embeddedImage(value: unknown): string {
+  return typeof value === "string" &&
+    /^data:image\/(png|jpeg|webp|gif);base64,[a-zA-Z0-9+/=\r\n]+$/.test(value)
+    ? value
+    : "";
 }
 function initial(): OfflineData {
   return {
@@ -214,15 +239,18 @@ export function offlineRequest<T>(
         quizzes: data.quizzes,
         bookmarks: data.bookmarks,
         saved: data.quizzes.filter((q) => data.bookmarks.includes(q.id)),
-        attempts: data.attempts
-          .filter((a) => a.result && !a.preview)
-          .sort((a, b) => b.result.submitted - a.result.submitted)
-          .map((a) => ({
-            ...a.result,
-            quiz_id: a.quiz.id,
-            title: a.quiz.title,
-            name: a.name,
-          })),
+        attempts: [
+          ...data.attempts
+            .filter((a) => a.result && !a.preview)
+            .sort((a, b) => b.result.submitted - a.result.submitted)
+            .map((a) => ({
+              ...a.result,
+              quiz_id: a.quiz.id,
+              title: a.quiz.title,
+              name: a.name,
+            })),
+          ...(data.studySessions || []),
+        ].sort((a, b) => b.submitted - a.submitted),
       };
     if (path === "/categories" && method === "DELETE") {
       data.quizzes.forEach((q) => {
@@ -337,6 +365,10 @@ export function offlineRequest<T>(
         return a;
       }
       if (method === "DELETE") {
+        if (data.studyProgress) delete data.studyProgress[q.id];
+        data.studySessions = data.studySessions?.filter(
+          (session) => session.quiz_id !== q.id,
+        );
         data.quizzes = data.quizzes.filter((quiz) => quiz.id !== q.id);
         data.bookmarks = data.bookmarks.filter((id) => id !== q.id);
         data.attempts = data.attempts.filter((a) => a.quiz.id !== q.id);
@@ -425,9 +457,7 @@ export function offlineRequest<T>(
             const earned =
               q.type === "short" && !q.accepted.length
                 ? null
-                : q.accepted.some(
-                      (value) => normalize(value) === normalize(answer),
-                    )
+                : matchesAnswer(q, answer)
                   ? q.points
                   : 0;
             return {

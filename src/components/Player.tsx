@@ -56,7 +56,7 @@ export function Player({
     [rank, setRank] = useState(false),
     [attempt, setAttempt] = useState<Attempt | null>(null),
     [answers, setAnswers] = useState<Record<string, string>>({}),
-    [selectedOptions, setSelectedOptions] = useState<Record<string, number>>(
+    [selectedOptions, setSelectedOptions] = useState<Record<string, number[]>>(
       {},
     ),
     [index, setIndex] = useState(0),
@@ -167,24 +167,42 @@ export function Player({
       <h2>{q.prompt}</h2>
       <p>
         {["multiple", "boolean"].includes(q.type)
-          ? "Select one answer below."
+          ? q.type === "multiple"
+            ? "Select all correct answers below."
+            : "Select one answer below."
           : "Type your answer below."}
       </p>
       {["multiple", "boolean"].includes(q.type) ? (
         <div className="answer-options">
           {q.options.map((option, n) => (
             <button
-              className={selectedOptions[q.id] === n ? "selected" : ""}
-              aria-pressed={selectedOptions[q.id] === n}
+              className={selectedOptions[q.id]?.includes(n) ? "selected" : ""}
+              aria-pressed={selectedOptions[q.id]?.includes(n)}
               key={n}
               onClick={() => {
-                setSelectedOptions((current) => ({ ...current, [q.id]: n }));
-                setAnswers((a) => ({ ...a, [q.id]: option }));
+                const selected =
+                  q.type === "boolean"
+                    ? [n]
+                    : selectedOptions[q.id]?.includes(n)
+                      ? selectedOptions[q.id].filter((i) => i !== n)
+                      : [...(selectedOptions[q.id] || []), n];
+                setSelectedOptions((current) => ({
+                  ...current,
+                  [q.id]: selected,
+                }));
+                setAnswers((a) => ({
+                  ...a,
+                  [q.id]: !selected.length
+                    ? ""
+                    : q.type === "boolean"
+                      ? option
+                      : JSON.stringify(selected.map((i) => q.options[i])),
+                }));
               }}
             >
               <span>{String.fromCharCode(65 + n)}</span>
               {option}
-              {selectedOptions[q.id] === n && <Check size={18} />}
+              {selectedOptions[q.id]?.includes(n) && <Check size={18} />}
             </button>
           ))}
         </div>
@@ -355,7 +373,6 @@ export function Player({
           </div>
           <div className="intro-body">
             <div className="tag-row">
-              <span className="difficulty">{quiz.difficulty}</span>
               {!!quiz.demo && <span className="demo-tag">Demo quiz</span>}
             </div>
             <h1>{quiz.title}</h1>
@@ -387,8 +404,6 @@ export function Player({
                 {displayQuiz.settings.time
                   ? "The timer starts when you begin and submits your answers when time runs out."
                   : "There’s no timer, so take your time."}{" "}
-                Short answers without accepted answers are reviewed by the
-                creator.
               </p>
             </div>
             <label>

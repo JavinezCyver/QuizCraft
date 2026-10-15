@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   ArrowDown,
   ArrowRight,
-  ArrowUpRight,
   Atom,
   BookOpen,
   Bookmark,
@@ -35,14 +34,12 @@ import {
   Pencil,
   Clock,
   Trash2,
-  Layers,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Select } from "./components/ui/select";
 import { Dialog } from "./components/ui/dialog";
 import { Studio } from "./components/Studio";
-import { Player } from "./components/Player";
 import { Flashcards } from "./components/Flashcards";
 import { api, type Quiz, type User, type Library } from "./lib/api";
 import { localUser } from "./lib/offline";
@@ -74,31 +71,32 @@ function QuizCard({
   onSave,
   saved,
   onEdit,
-  onFlashcards,
   onDelete,
-  onExport,
-  onDuplicate,
 }: {
   quiz: Quiz;
   onOpen: () => void;
   onSave: () => void;
   saved: boolean;
   onEdit?: () => void;
-  onFlashcards?: () => void;
   onDelete?: () => void;
-  onExport?: () => void;
-  onDuplicate?: () => void;
 }) {
   const Icon = categoryIcons[quiz.category] || BookOpen;
   return (
     <article className="quiz-card">
       <button
-        className={`quiz-cover cover-${quiz.theme}`}
+        className={`quiz-cover cover-${quiz.theme}${quiz.cover ? " has-uploaded-cover" : ""}`}
         onClick={onOpen}
         tabIndex={-1}
         aria-label={`Open ${quiz.title}`}
-        style={quiz.cover ? { backgroundImage: `url(${quiz.cover})` } : {}}
       >
+        {quiz.cover && (
+          <img
+            className="quiz-cover-image"
+            src={quiz.cover}
+            alt=""
+            draggable={false}
+          />
+        )}
         <span className="cover-shade" />
         <span className="cover-category">
           <Icon size={12} />
@@ -120,9 +118,6 @@ function QuizCard({
       </button>
       <div className="quiz-card-body">
         <div className="tag-row">
-          <span className={`difficulty ${quiz.difficulty.toLowerCase()}`}>
-            {quiz.difficulty}
-          </span>
           <span className="question-count">{quiz.questionCount} questions</span>
           {!!quiz.demo && <span className="demo-tag">Demo</span>}
           {quiz.status === "draft" && <span className="pill">Draft</span>}
@@ -143,31 +138,16 @@ function QuizCard({
             {quiz.plays || 0}
           </span>
         </div>
-        {(onEdit || onFlashcards || onDelete) && (
+        {(onEdit || onDelete) && (
           <div className="card-actions">
             {onEdit && (
               <button className="text-link" onClick={onEdit}>
                 <Pencil size={14} /> Edit quiz
               </button>
             )}
-            {onFlashcards && (
-              <button className="text-link" onClick={onFlashcards}>
-                <Layers size={14} /> Flashcards
-              </button>
-            )}
             {onDelete && (
               <button className="text-link danger" onClick={onDelete}>
                 <Trash2 size={14} /> Delete
-              </button>
-            )}
-            {onExport && (
-              <button className="text-link" onClick={onExport}>
-                <Copy size={14} /> Export quiz
-              </button>
-            )}
-            {onDuplicate && (
-              <button className="text-link" onClick={onDuplicate}>
-                <Copy size={14} /> Duplicate
               </button>
             )}
           </div>
@@ -176,7 +156,7 @@ function QuizCard({
     </article>
   );
 }
-export default function App() {
+export default function App({ onReady }: { onReady?: () => void } = {}) {
   const [view, setView] = useState("home"),
     [quizzes, setQuizzes] = useState<Quiz[]>([]),
     [user, setUser] = useState<User>(localUser),
@@ -191,9 +171,7 @@ export default function App() {
     [category, setCategory] = useState("All topics"),
     [studyCategory, setStudyCategory] = useState("All categories"),
     [studySort, setStudySort] = useState("recent"),
-    [difficulty, setDifficulty] = useState("All levels"),
     [sort, setSort] = useState("popular"),
-    [showAll, setShowAll] = useState(false),
     [transfer, setTransfer] = useState(false),
     [transferText, setTransferText] = useState(""),
     [transferError, setTransferError] = useState(""),
@@ -204,7 +182,6 @@ export default function App() {
       localStorage.getItem("quizcraft-theme") === "dark",
     ),
     [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null),
-    [quizReturnView, setQuizReturnView] = useState("home"),
     [flashcardsReturnView, setFlashcardsReturnView] = useState("home"),
     [editId, setEditId] = useState(""),
     [profile, setProfile] = useState(false),
@@ -236,19 +213,20 @@ export default function App() {
         const selected = await api<Quiz>("/quizzes/" + id);
         setActiveQuiz(selected);
         const previousView = window.history.state?.quizReturnView;
-        setQuizReturnView(
+        setFlashcardsReturnView(
           navItems.some((item) => item.id === previousView)
             ? previousView
             : selected.owner === u?.id
               ? "quizzes"
               : "home",
         );
-        setView("take");
+        setView("flashcards");
       }
     } catch (e) {
       setLoadError((e as Error).message);
     } finally {
       setLoading(false);
+      onReady?.();
     }
   }
   useEffect(() => {
@@ -304,12 +282,11 @@ export default function App() {
       }
       if (view === "studio") navigate("quizzes");
       else if (view === "flashcards") navigate(flashcardsReturnView);
-      else if (view === "take") navigate(quizReturnView);
       else if (view !== "home") navigate("home");
     };
     window.addEventListener("quizcraft-back", handleBack);
     return () => window.removeEventListener("quizcraft-back", handleBack);
-  }, [view, mobile, quizReturnView, flashcardsReturnView]);
+  }, [view, mobile, flashcardsReturnView]);
   async function createQuiz() {
     try {
       const q = await api<{ id: string }>("/quizzes", "POST", {});
@@ -332,8 +309,8 @@ export default function App() {
   async function openQuiz(q: Quiz) {
     try {
       setActiveQuiz(await api<Quiz>("/quizzes/" + q.id));
-      setQuizReturnView(view);
-      setView("take");
+      setFlashcardsReturnView(view);
+      setView("flashcards");
       window.history.replaceState(
         { quizReturnView: view },
         "",
@@ -358,7 +335,6 @@ export default function App() {
     .filter(
       (q) =>
         (category === "All topics" || q.category === category) &&
-        (difficulty === "All levels" || q.difficulty === difficulty) &&
         `${q.title} ${q.description} ${q.category} ${q.creator}`
           .toLowerCase()
           .includes(search.toLowerCase()),
@@ -369,7 +345,6 @@ export default function App() {
         : (b.plays || 0) - (a.plays || 0),
     );
   const explore = () => {
-    setShowAll(true);
     if (view !== "home") setView("home");
     setTimeout(
       () =>
@@ -405,15 +380,6 @@ export default function App() {
           onOpen={() => openQuiz(q)}
           onSave={() => saveQuiz(q)}
           saved={library.bookmarks.includes(q.id)}
-          onFlashcards={
-            editable || library.quizzes.some((owned) => owned.id === q.id)
-              ? () => {
-                  setActiveQuiz(q);
-                  setFlashcardsReturnView(view);
-                  setView("flashcards");
-                }
-              : undefined
-          }
           onEdit={
             editable
               ? () => {
@@ -427,19 +393,6 @@ export default function App() {
               ? () => {
                   setDeleteError("");
                   setDeleteTarget(q);
-                }
-              : undefined
-          }
-          onExport={editable ? () => openExport(q) : undefined}
-          onDuplicate={
-            editable
-              ? async () => {
-                  const copy = await api(
-                    "/quizzes/" + q.id + "/duplicate",
-                    "POST",
-                  );
-                  setEditId(copy.id);
-                  setView("studio");
                 }
               : undefined
           }
@@ -580,7 +533,7 @@ export default function App() {
             >
               {user.name[0]}
             </button>
-            {showCreateQuiz && view !== "quizzes" && (
+            {showCreateQuiz && !["home", "quizzes"].includes(view) && (
               <Button size="sm" onClick={createQuiz} aria-label="Create a Quiz">
                 <Plus size={16} />
                 <span className="create-label-full">Create a Quiz</span>
@@ -600,9 +553,7 @@ export default function App() {
               }}
               onPublished={async () => {
                 navigate("home");
-                setDifficulty("All levels");
                 setSort("newest");
-                setShowAll(true);
                 await load();
                 requestAnimationFrame(() => {
                   document
@@ -611,12 +562,12 @@ export default function App() {
                 });
               }}
               onPreview={(q) => {
-                setQuizReturnView("quizzes");
+                setFlashcardsReturnView("quizzes");
                 setActiveQuiz({
                   ...q,
                   questionCount: q.questions?.length || 0,
                 });
-                setView("take");
+                setView("flashcards");
               }}
               notify={notify}
             />
@@ -634,67 +585,9 @@ export default function App() {
                 }}
               />
             </>
-          ) : view === "take" && activeQuiz ? (
-            <>
-              <Player
-                key={activeQuiz.id}
-                quiz={activeQuiz}
-                onBack={() => navigate(quizReturnView)}
-                backLabel={
-                  quizReturnView === "home"
-                    ? "Back to quiz library"
-                    : `Back to ${navItems.find((item) => item.id === quizReturnView)?.label.toLowerCase() || "my quizzes"}`
-                }
-                onDone={refreshLibrary}
-                notify={notify}
-              />
-              <div className="quiz-tools">
-                <button
-                  className="text-link"
-                  onClick={() => openExport(activeQuiz)}
-                >
-                  <Copy size={15} /> Export quiz
-                </button>
-                {user?.id === activeQuiz.owner && (
-                  <button
-                    className="text-link"
-                    onClick={() => {
-                      setEditId(activeQuiz.id);
-                      setView("studio");
-                    }}
-                  >
-                    <Pencil size={15} /> Back to editor
-                  </button>
-                )}
-              </div>
-            </>
           ) : view === "home" ? (
             <>
               <section id="explore" className="explore-section">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">FOLLOW YOUR CURIOSITY</span>
-                    <h2>
-                      What will you discover today? <span>✦</span>
-                    </h2>
-                    <p>
-                      A new topic, a friendly challenge, or your next “aha!”
-                      moment.
-                    </p>
-                  </div>
-                  <button
-                    className="text-link"
-                    onClick={() => {
-                      setCategory("All topics");
-                      setSearch("");
-                      setDifficulty("All levels");
-                      setShowAll(true);
-                    }}
-                  >
-                    View all quizzes
-                    <ArrowRight size={16} />
-                  </button>
-                </div>
                 <div className="discovery-controls">
                   <div className="search-field">
                     <Search size={19} />
@@ -715,20 +608,6 @@ export default function App() {
                     )}
                     <span className="search-shortcut">⌕</span>
                   </div>
-                  <label className="select-control">
-                    <span className="sr-only">Difficulty</span>
-                    <Select
-                      label="Difficulty"
-                      value={difficulty}
-                      onChange={setDifficulty}
-                      options={[
-                        "All levels",
-                        "Easy",
-                        "Intermediate",
-                        "Advanced",
-                      ].map((value) => ({ value, label: value }))}
-                    />
-                  </label>
                 </div>
                 <div className="category-tabs">
                   <button
@@ -794,9 +673,7 @@ export default function App() {
                     <Button onClick={load}>Try again</Button>
                   </div>
                 ) : filtered.length ? (
-                  cards(
-                    filtered.slice(0, showAll || search ? filtered.length : 6),
-                  )
+                  cards(filtered)
                 ) : !quizzes.length ? (
                   <Empty
                     title="Your library starts here"
@@ -814,108 +691,12 @@ export default function App() {
                       onClick={() => {
                         setSearch("");
                         setCategory("All topics");
-                        setDifficulty("All levels");
                       }}
                     >
                       Clear filters
                     </Button>
                   </div>
                 )}
-              </section>
-              <section className="recent-section">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">FRESH OFF THE PRESS</span>
-                    <h2>New questions. New possibilities.</h2>
-                  </div>
-                  <button
-                    className="text-link"
-                    onClick={() => {
-                      setSort("newest");
-                      explore();
-                    }}
-                  >
-                    See what’s new
-                    <ArrowRight size={16} />
-                  </button>
-                </div>
-                <div className="recent-grid">
-                  {[...quizzes]
-                    .sort((a, b) =>
-                      String(b.created).localeCompare(String(a.created)),
-                    )
-                    .slice(0, 3)
-                    .map((q) => {
-                      const Icon = categoryIcons[q.category] || BookOpen;
-                      return (
-                        <button
-                          className="recent-card"
-                          key={q.id}
-                          onClick={() => openQuiz(q)}
-                        >
-                          <span className={`recent-icon cover-${q.theme}`}>
-                            <Icon size={25} />
-                          </span>
-                          <span>
-                            <small>
-                              {q.category} ·{" "}
-                              {q.demo ? "Demo quiz" : "Just published"}
-                            </small>
-                            <b>{q.title}</b>
-                            <span>
-                              {q.questionCount} questions <span>·</span>{" "}
-                              {q.difficulty}
-                            </span>
-                          </span>
-                          <ArrowUpRight size={18} />
-                        </button>
-                      );
-                    })}
-                </div>
-              </section>
-              <section className="how-it-works">
-                <div className="how-intro">
-                  <span className="eyebrow">FROM “WHAT IF” TO “WELL DONE”</span>
-                  <h2>
-                    Good questions.
-                    <br />
-                    Great possibilities.
-                  </h2>
-                  <p>A spark of curiosity is all you need.</p>
-                  <button className="text-link" onClick={createQuiz}>
-                    Make your first quiz
-                    <ArrowRight size={16} />
-                  </button>
-                </div>
-                {[
-                  {
-                    n: "01",
-                    icon: Pencil,
-                    title: "Create something great",
-                    text: "Bring your knowledge to life with our easy-to-use quiz studio.",
-                  },
-                  {
-                    n: "02",
-                    icon: ShareIcon,
-                    title: "Pass the curiosity on",
-                    text: "Share a link with friends, your class, or the whole world.",
-                  },
-                  {
-                    n: "03",
-                    icon: Trophy,
-                    title: "Challenge. Learn. Repeat.",
-                    text: "Test your knowledge and celebrate every little discovery.",
-                  },
-                ].map(({ n, icon: Icon, title, text }) => (
-                  <div className="how-step" key={n}>
-                    <div>
-                      <span>{n}</span>
-                      <Icon size={20} />
-                    </div>
-                    <h3>{title}</h3>
-                    <p>{text}</p>
-                  </div>
-                ))}
               </section>
               <footer className="footer">
                 <span>
@@ -1175,8 +956,8 @@ export default function App() {
                     </label>
                     <span role="status">
                       {studyQuizzes.length}{" "}
-                      {studyQuizzes.length === 1 ? "quiz" : "quizzes"} · Open
-                      Flashcards to study
+                      {studyQuizzes.length === 1 ? "quiz" : "quizzes"} · Open a
+                      deck to study
                     </span>
                   </div>
                   <div className="category-tabs">
@@ -1292,11 +1073,13 @@ export default function App() {
                         <div>
                           <b>{a.title}</b>
                           <small>
-                            {a.pending
-                              ? "Awaiting manual grading"
-                              : a.score === a.maximum
-                                ? "Perfect score!"
-                                : "Completed"}
+                            {a.kind === "flashcards"
+                              ? "Flashcard session"
+                              : a.pending
+                                ? "Awaiting manual grading"
+                                : a.score === a.maximum
+                                  ? "Perfect score!"
+                                  : "Completed"}
                           </small>
                         </div>
                         <strong data-label="Score">
@@ -1570,9 +1353,6 @@ export default function App() {
       )}
     </div>
   );
-}
-function ShareIcon(props: React.ComponentProps<typeof ArrowUpRight>) {
-  return <ArrowUpRight {...props} />;
 }
 function Empty({
   title,

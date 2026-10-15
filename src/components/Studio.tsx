@@ -16,7 +16,10 @@ import { Button } from "./ui/button";
 import { Select } from "./ui/select";
 import { Dialog } from "./ui/dialog";
 import { api, type Quiz, type Question, type Library } from "../lib/api";
+import { correctIndices } from "../lib/questions";
+import { QuestionEditor } from "./QuestionEditor";
 import { readCoverImage } from "../lib/cover";
+import { CardImageUpload } from "./CardImageUpload";
 const fresh = (): Question => ({
   id: crypto.randomUUID(),
   type: "multiple",
@@ -42,6 +45,7 @@ export function Studio({
   const [quiz, setQuiz] = useState<Quiz | null>(null),
     [selected, setSelected] = useState(0),
     [coverBusy, setCoverBusy] = useState(false),
+    [imageUploads, setImageUploads] = useState<Record<string, boolean>>({}),
     [coverError, setCoverError] = useState(""),
     [saving, setSaving] = useState("Loading draft…"),
     [tab, setTab] = useState("questions"),
@@ -52,6 +56,11 @@ export function Studio({
     [deleteCategoryOpen, setDeleteCategoryOpen] = useState(false),
     [deletingCategory, setDeletingCategory] = useState(false);
   const coverRequest = useRef(0);
+  const imagesBusy = coverBusy || Object.values(imageUploads).some(Boolean);
+  const imageBusy = (key: string, busy: boolean) =>
+    setImageUploads((current) =>
+      current[key] === busy ? current : { ...current, [key]: busy },
+    );
   useEffect(
     () => () => {
       coverRequest.current++;
@@ -88,7 +97,14 @@ export function Studio({
       .catch(() => {});
     api<Quiz>("/quizzes/" + id)
       .then((q) => {
-        setQuiz(q);
+        setQuiz({
+          ...q,
+          questions: q.questions?.map((question) =>
+            question.type === "short"
+              ? { ...question, type: "blank" }
+              : question,
+          ),
+        });
         setSaving("All changes saved");
       })
       .catch((e) => setError(e.message));
@@ -173,11 +189,15 @@ export function Studio({
     }
   }
   const question = list[selected];
-  const correctOption =
-    question?.correctOption ??
-    (question?.accepted.length
-      ? question.options.indexOf(question.accepted[0])
-      : -1);
+  const correctOptions = question ? correctIndices(question) : [];
+  function setCorrectOptions(indices: number[], options = question.options) {
+    update({
+      options,
+      correctOptions: indices,
+      correctOption: null,
+      accepted: indices.map((i) => options[i]),
+    });
+  }
   function removeQuestion(index: number) {
     const remaining = list.filter((_, i) => i !== index);
     const currentIndex = remaining.findIndex((q) => q.id === question?.id);
@@ -194,6 +214,10 @@ export function Studio({
     });
   async function save(publish = false, preview = false) {
     if (!quiz) return;
+    if (imagesBusy) {
+      setError("Wait for your pictures to finish processing before saving.");
+      return;
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     try {
       await saveQueue.current;
@@ -219,6 +243,7 @@ export function Studio({
     }
   }
   function switchQuestion(delta: number) {
+    if (imagesBusy) return;
     const target = selected + delta;
     if (target < 0 || target >= list.length) return;
     setSelected(target);
@@ -257,21 +282,25 @@ export function Studio({
       </Dialog>
       <div className="page-title studio-heading">
         <div>
-          <button className="text-link" onClick={onBack}>
+          <button className="text-link" disabled={imagesBusy} onClick={onBack}>
             <ArrowLeft size={16} /> My quizzes
           </button>
           <h1>
-            Quiz creation studio <span className="pill">DRAFT</span>
+            Flashcard creation studio <span className="pill">DRAFT</span>
           </h1>
           <p>
             <Check size={14} /> {saving}
           </p>
         </div>
         <div className="button-row">
-          <Button variant="outline" onClick={() => save(false, true)}>
+          <Button
+            variant="outline"
+            disabled={imagesBusy}
+            onClick={() => save(false, true)}
+          >
             <Eye size={16} /> Preview
           </Button>
-          <Button onClick={() => save(true)}>
+          <Button disabled={imagesBusy} onClick={() => save(true)}>
             <Globe size={16} /> Publish quiz
           </Button>
         </div>
@@ -284,15 +313,17 @@ export function Studio({
       <div className="studio-tabs">
         <button
           className={tab === "questions" ? "active" : ""}
+          disabled={imagesBusy}
           onClick={() => setTab("questions")}
         >
           01 <span>Quiz & questions</span>
         </button>
         <button
           className={tab === "settings" ? "active" : ""}
+          disabled={imagesBusy}
           onClick={() => setTab("settings")}
         >
-          02 <span>Quiz settings</span>
+          02 <span>Flashcard settings</span>
         </button>
       </div>
       {tab === "questions" ? (
@@ -315,7 +346,7 @@ export function Studio({
                 <textarea
                   value={quiz.description}
                   onChange={(e) => change({ description: e.target.value })}
-                  placeholder="Tell people what your quiz is about…"
+                  placeholder="What would you like to study?"
                 />
               </label>
               <div className="field-row">
@@ -345,17 +376,6 @@ export function Studio({
                       <Trash2 size={17} />
                     </button>
                   </div>
-                </label>
-                <label>
-                  Difficulty
-                  <Select
-                    label="Quiz difficulty"
-                    value={quiz.difficulty}
-                    onChange={(difficulty) => change({ difficulty })}
-                    options={["Easy", "Intermediate", "Advanced"].map(
-                      (value) => ({ value, label: value }),
-                    )}
-                  />
                 </label>
               </div>
               <div className="custom-category-row">
@@ -468,7 +488,7 @@ export function Studio({
                       className="icon-btn"
                       aria-label="Previous question"
                       title="Previous question"
-                      disabled={selected === 0}
+                      disabled={selected === 0 || imagesBusy}
                       onClick={() => switchQuestion(-1)}
                     >
                       <ArrowUp size={17} />
@@ -477,7 +497,7 @@ export function Studio({
                       className="icon-btn"
                       aria-label="Next question"
                       title="Next question"
-                      disabled={selected === list.length - 1}
+                      disabled={selected === list.length - 1 || imagesBusy}
                       onClick={() => switchQuestion(1)}
                     >
                       <ArrowDown size={17} />
@@ -485,6 +505,7 @@ export function Studio({
                     <button
                       className="icon-btn"
                       aria-label="Add blank question"
+                      disabled={imagesBusy}
                       title="Add blank question"
                       onClick={() => {
                         change({
@@ -498,6 +519,7 @@ export function Studio({
                     <button
                       className="icon-btn danger"
                       aria-label="Delete question"
+                      disabled={imagesBusy}
                       onClick={() => removeQuestion(selected)}
                     >
                       <Trash2 size={17} />
@@ -522,57 +544,66 @@ export function Studio({
                                 : [],
                           accepted: [],
                           correctOption: null,
+                          correctOptions: [],
                         });
                       }}
                       options={[
                         { value: "multiple", label: "Multiple choice" },
                         { value: "boolean", label: "True or false" },
                         { value: "blank", label: "Fill in the blank" },
-                        { value: "short", label: "Short answer" },
                       ]}
                     />
                   </label>
-                  <label>
-                    Points
-                    <input
-                      type="number"
-                      min={1}
-                      max={1000}
-                      value={question.points}
-                      onChange={(e) =>
-                        update({ points: Number(e.target.value) })
-                      }
-                    />
-                  </label>
                 </div>
-                <label>
-                  Your question
-                  <textarea
-                    value={question.prompt}
-                    onChange={(e) => update({ prompt: e.target.value })}
-                    placeholder="Ask something interesting…"
-                  />
-                </label>
+                <QuestionEditor
+                  key={question.id}
+                  value={question.prompt}
+                  onChange={(prompt) => update({ prompt })}
+                />
+                <CardImageUpload
+                  side="Question"
+                  value={question.questionImage}
+                  onBusyChange={(busy) =>
+                    imageBusy(`${question.id}:question`, busy)
+                  }
+                  onChange={(questionImage) => update({ questionImage })}
+                />
                 {["multiple", "boolean"].includes(question.type) ? (
                   <div>
                     <label>
                       Answer options{" "}
-                      <span className="muted">Select the correct answer</span>
+                      <span className="muted">
+                        {question.type === "multiple"
+                          ? "Select all correct answers"
+                          : "Select the correct answer"}
+                      </span>
                     </label>
                     <p>
                       Type the answer text into each field, then select the
-                      circle beside the correct answer.
+                      control beside each correct answer.
                     </p>
                     {question.options.map((option, i) => (
                       <div className="option-edit" key={i}>
                         <label className="correct-option-toggle">
                           <input
-                            type="radio"
+                            type={
+                              question.type === "multiple"
+                                ? "checkbox"
+                                : "radio"
+                            }
                             aria-label={`Mark option ${i + 1} correct`}
                             name={`correct-${question.id}`}
-                            checked={correctOption === i}
+                            checked={correctOptions.includes(i)}
                             onChange={() =>
-                              update({ accepted: [option], correctOption: i })
+                              setCorrectOptions(
+                                question.type === "boolean"
+                                  ? [i]
+                                  : correctOptions.includes(i)
+                                    ? correctOptions.filter((n) => n !== i)
+                                    : [...correctOptions, i].sort(
+                                        (a, b) => a - b,
+                                      ),
+                              )
                             }
                           />
                         </label>
@@ -582,15 +613,12 @@ export function Studio({
                           readOnly={question.type === "boolean"}
                           placeholder={`Enter answer option ${String.fromCharCode(65 + i)}`}
                           onChange={(e) =>
-                            update({
-                              options: question.options.map((x, n) =>
+                            setCorrectOptions(
+                              correctOptions,
+                              question.options.map((x, n) =>
                                 i === n ? e.target.value : x,
                               ),
-                              accepted:
-                                correctOption === i
-                                  ? [e.target.value]
-                                  : question.accepted,
-                            })
+                            )
                           }
                         />
                         {question.type === "multiple" && (
@@ -599,21 +627,12 @@ export function Studio({
                             aria-label={`Remove option ${i + 1}`}
                             disabled={question.options.length <= 2}
                             onClick={() =>
-                              update({
-                                options: question.options.filter(
-                                  (_, n) => n !== i,
-                                ),
-                                accepted:
-                                  correctOption === i ? [] : question.accepted,
-                                correctOption:
-                                  correctOption === i
-                                    ? null
-                                    : correctOption > i
-                                      ? correctOption - 1
-                                      : correctOption >= 0
-                                        ? correctOption
-                                        : null,
-                              })
+                              setCorrectOptions(
+                                correctOptions
+                                  .filter((n) => n !== i)
+                                  .map((n) => (n > i ? n - 1 : n)),
+                                question.options.filter((_, n) => n !== i),
+                              )
                             }
                           >
                             <Trash2 size={15} />
@@ -645,25 +664,31 @@ export function Studio({
                             : [],
                         })
                       }
-                      placeholder={
-                        question.type === "short"
-                          ? "Leave empty to grade manually"
-                          : "Enter at least one accepted answer"
-                      }
+                      placeholder="Enter at least one accepted answer"
                     />
                     <small>
                       Answers ignore capitalization and extra spaces.
                     </small>
                   </label>
                 )}
-                <label>
-                  Answer explanation
-                  <textarea
-                    value={question.explanation}
-                    onChange={(e) => update({ explanation: e.target.value })}
-                    placeholder="Help learners understand the answer."
-                  />
-                </label>
+                <CardImageUpload
+                  side="Answer"
+                  value={question.answerImage}
+                  onBusyChange={(busy) =>
+                    imageBusy(`${question.id}:answer`, busy)
+                  }
+                  onChange={(answerImage) => update({ answerImage })}
+                />
+                {question.type !== "blank" && (
+                  <label>
+                    Answer explanation
+                    <textarea
+                      value={question.explanation}
+                      onChange={(e) => update({ explanation: e.target.value })}
+                      placeholder="Help learners understand the answer."
+                    />
+                  </label>
+                )}
               </section>
             ) : (
               <div className="empty-state panel">
@@ -680,7 +705,11 @@ export function Studio({
                 {list.filter((q) => q.prompt && q.accepted.length).length} of{" "}
                 {list.length} questions ready
               </span>
-              <Button variant="outline" onClick={() => save()}>
+              <Button
+                variant="outline"
+                disabled={imagesBusy}
+                onClick={() => save()}
+              >
                 <Save size={16} /> Save draft
               </Button>
             </div>
@@ -691,7 +720,7 @@ export function Studio({
           <h2>
             <Settings2 size={20} /> Make it your own
           </h2>
-          <p>Choose how you study this quiz on this device.</p>
+          <p>Choose how you study these flashcards on this device.</p>
           <div className="field-row">
             <label>
               Visibility
@@ -711,29 +740,10 @@ export function Studio({
                 ]}
               />
             </label>
-            <label>
-              Question layout
-              <Select
-                label="Question layout"
-                value={quiz.settings.layout}
-                onChange={(value) =>
-                  change({
-                    settings: {
-                      ...quiz.settings,
-                      layout: value as "single" | "all",
-                    },
-                  })
-                }
-                options={[
-                  { value: "single", label: "One question at a time" },
-                  { value: "all", label: "All questions" },
-                ]}
-              />
-            </label>
           </div>
           <div className="field-row">
             <label>
-              Time limit (minutes, 0 = unlimited)
+              Study time (minutes, 0 = unlimited)
               <input
                 type="number"
                 min="0"
@@ -749,48 +759,18 @@ export function Studio({
                 }
               />
             </label>
-            <label>
-              Passing score (%)
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={quiz.settings.passing}
-                onChange={(e) =>
-                  change({
-                    settings: {
-                      ...quiz.settings,
-                      passing: Math.max(
-                        0,
-                        Math.min(100, Number(e.target.value)),
-                      ),
-                    },
-                  })
-                }
-              />
-            </label>
           </div>
           {(
             [
               [
-                "review",
-                "Review before submitting",
-                "Let learners check their answers.",
-              ],
-              [
                 "showAnswers",
-                "Show correct answers",
-                "Include explanations in the results.",
-              ],
-              [
-                "rankings",
-                "Device leaderboard",
-                "Keep scores for learners using this device.",
+                "Reveal answers",
+                "Allow flipping cards to see correct answers and explanations.",
               ],
               [
                 "randomQuestions",
-                "Shuffle questions",
-                "Give every attempt a fresh order.",
+                "Shuffle cards",
+                "Give each study session a fresh card order.",
               ],
               [
                 "randomAnswers",
@@ -816,7 +796,7 @@ export function Studio({
               />
             </label>
           ))}
-          <Button onClick={() => save(true)}>
+          <Button disabled={imagesBusy} onClick={() => save(true)}>
             <Globe size={16} /> Publish quiz
           </Button>
         </section>

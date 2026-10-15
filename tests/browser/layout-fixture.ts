@@ -67,4 +67,5 @@ export async function loadLayoutFixtures(page: Page) {
     });
   });
   await page.reload();
+  await expect(page.locator("#startup-splash")).toHaveCount(0);
 }

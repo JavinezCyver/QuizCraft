@@ -1,5 +1,10 @@
 import { prepareQuiz, withData, type OfflineData } from "./offline";
-import type { Quiz } from "./api";
+import type { Quiz, History } from "./api";
+import {
+  studySignature,
+  validStudyProgress,
+  type StudyProgress,
+} from "./study-progress";
 
 export async function exportData(quiz?: Quiz): Promise<string> {
   const payload = quiz
@@ -47,10 +52,90 @@ export async function restoreBackup(text: string) {
     payload.quizzes.length > 1000
   )
     throw new Error("Invalid QuizCraft backup.");
-  const quizzes = payload.quizzes.map((q) => ({
-    ...prepareQuiz(q),
-    id: String(q.id),
-  }));
+  const validId = (id: unknown): id is string =>
+    typeof id === "string" &&
+    !!id &&
+    !["__proto__", "constructor", "prototype"].includes(id);
+  const ids = new Set<string>();
+  const quizzes = payload.quizzes.map((q) => {
+    if (!validId(q.id) || ids.has(q.id))
+      throw new Error("Invalid quiz identifiers in backup.");
+    ids.add(q.id);
+    const quiz = { ...prepareQuiz(q), id: q.id };
+    const questionIds = new Set<string>();
+    quiz.questions!.forEach((card, index) => {
+      const id = q.questions![index].id;
+      if (!validId(id) || questionIds.has(id))
+        throw new Error("Invalid question identifiers in backup.");
+      questionIds.add(id);
+      card.id = id;
+    });
+    return quiz;
+  });
+  const studyProgress: Record<string, StudyProgress> = {};
+  if (
+    payload.studyProgress !== undefined &&
+    (!payload.studyProgress ||
+      typeof payload.studyProgress !== "object" ||
+      Array.isArray(payload.studyProgress))
+  )
+    throw new Error("Invalid study progress in backup.");
+  await Promise.all(
+    quizzes.map(async (quiz, index) => {
+      const saved = payload.studyProgress?.[quiz.id];
+      if (!saved) return;
+      const original = payload.quizzes[index];
+      const signature = await studySignature(original);
+      // Ignore progress for questions that had already been edited before export.
+      if (
+        saved.signature !== signature &&
+        saved.signature !==
+          JSON.stringify([original.questions, original.settings])
+      )
+        return;
+      if (!validStudyProgress(quiz, saved))
+        throw new Error("Invalid study progress in backup.");
+      studyProgress[quiz.id] = {
+        ...saved,
+        signature: await studySignature(quiz),
+      };
+    }),
+  );
+  if (
+    payload.studySessions !== undefined &&
+    !Array.isArray(payload.studySessions)
+  )
+    throw new Error("Invalid study history in backup.");
+  const sessionIds = new Set<string>();
+  const studySessions: History[] = (payload.studySessions || []).map(
+    (session) => {
+      if (
+        !session ||
+        !validId(session.id) ||
+        sessionIds.has(session.id) ||
+        !ids.has(session.quiz_id) ||
+        session.kind !== "flashcards" ||
+        typeof session.title !== "string" ||
+        !Number.isFinite(session.started) ||
+        !Number.isFinite(session.submitted) ||
+        session.submitted < session.started ||
+        !Number.isFinite(session.maximum) ||
+        session.maximum <= 0 ||
+        !Number.isFinite(session.score) ||
+        session.score < 0 ||
+        session.score > session.maximum ||
+        !Number.isInteger(session.correct) ||
+        session.correct < 0 ||
+        session.pending !== 0
+      )
+        throw new Error("Invalid study history in backup.");
+      sessionIds.add(session.id);
+      return {
+        ...session,
+        name: String(session.name || "Learner").slice(0, 80),
+      };
+    },
+  );
   const attempts = payload.attempts.map((a) => {
     const quiz = prepareQuiz(a.quiz);
     if (
@@ -114,6 +199,8 @@ export async function restoreBackup(text: string) {
       quizzes.some((q) => q.id === id),
     );
     data.attempts = attempts;
+    data.studyProgress = studyProgress;
+    data.studySessions = studySessions;
     data.user.name = payload.user.name.slice(0, 80) || "Curious learner";
   });
 }
