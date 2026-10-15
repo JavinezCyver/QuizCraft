@@ -39,13 +39,11 @@ test("saving and previewing wait for question pictures to finish processing", as
     canvas.getContext("2d")!.fillRect(0, 0, 120, 80);
     return canvas.toDataURL("image/png").split(",")[1];
   });
-  await page
-    .getByLabel("Question picture", { exact: true })
-    .setInputFiles({
-      name: "pending.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(png, "base64"),
-    });
+  await page.getByLabel("Question picture", { exact: true }).setInputFiles({
+    name: "pending.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(png, "base64"),
+  });
   await expect(page.locator(".card-image-upload [role=status]")).toBeVisible();
   for (const name of ["Save draft", "Preview", "Publish quiz"]) {
     await expect(
@@ -620,6 +618,68 @@ test("bold and italic buttons stay on for new typing until toggled off", async (
   await expect
     .poll(() => prompt.textContent())
     .toBe("Bruce Wayne is Batman.\nNext line");
+});
+
+test("Underline toggles, shortcuts, and saved flashcards work on a narrow screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.goto("/");
+  await createQuiz(page);
+  await page
+    .getByRole("button", { name: "Add first question", exact: true })
+    .click();
+  const field = page.getByRole("textbox", {
+    name: "Your question",
+    exact: true,
+  });
+  const underline = page.getByRole("button", {
+    name: "Underline",
+    exact: true,
+  });
+  const bold = page.getByRole("button", { name: "Bold", exact: true });
+  const italic = page.getByRole("button", { name: "Italic", exact: true });
+  await underline.tap();
+  await expect(underline).toHaveAttribute("aria-pressed", "true");
+  await underline.tap();
+  await expect(underline).toHaveAttribute("aria-pressed", "false");
+  await field.pressSequentially("Plain ");
+  await expect(field.locator("u")).toHaveCount(0);
+  await underline.tap();
+  await field.pressSequentially("underlined");
+  await expect(field.locator("u")).toHaveText("underlined");
+  await field.press("Control+u");
+  await expect(underline).toHaveAttribute("aria-pressed", "false");
+  await field.pressSequentially(" text");
+  await expect(field.locator("u")).toHaveText("underlined");
+  await field.press("Control+a");
+  await field.press("Control+u");
+  await expect(field.locator("u")).toHaveText("Plain underlined text");
+  await bold.tap();
+  await expect(underline).toHaveAttribute("aria-pressed", "false");
+  await expect(field.locator("u")).toHaveCount(0);
+  await italic.tap();
+  await underline.tap();
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  await expect(italic).toHaveAttribute("aria-pressed", "false");
+  await expect(underline).toHaveAttribute("aria-pressed", "true");
+  await expect(field.locator("b, strong, i, em")).toHaveCount(0);
+  const bounds = await underline.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+  await page.getByRole("button", { name: "Preview", exact: true }).tap();
+  const prompt = page.locator(
+    '.flashcard-front[aria-hidden="false"] .flashcard-text',
+  );
+  await expect(prompt).toHaveText("Plain underlined text");
+  await expect(prompt.locator("u")).toHaveText("Plain underlined text");
+  await expect(prompt.locator("u")).toHaveCSS(
+    "text-decoration-line",
+    "underline",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Edit quiz", exact: true }).tap();
+  await expect(field.locator("u")).toHaveText("Plain underlined text");
 });
 
 test("clicking Bold or Italic twice before typing returns to normal text", async ({

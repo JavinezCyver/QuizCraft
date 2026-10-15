@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Bold, Italic } from "lucide-react";
+import { Bold, Italic, Underline } from "lucide-react";
 import { Button } from "./ui/button";
 import { parseQuestionText, type InlinePart } from "../lib/question-format";
 
@@ -9,17 +9,17 @@ function appendParts(parent: Node, parts: InlinePart[]) {
       parent.appendChild(document.createTextNode(part.text));
     else {
       const element = document.createElement(
-        part.type === "bold" ? "strong" : "em",
+        part.type === "bold" ? "strong" : part.type === "italic" ? "em" : "u",
       );
       appendParts(element, part.children);
       parent.appendChild(element);
     }
   }
 }
-function wrap(content: string, marker: string) {
+function wrap(content: string, marker: string, closingMarker = marker) {
   const match = content.match(/^(\s*)([\s\S]*?\S)(\s*)$/);
   return match
-    ? `${match[1]}${marker}${match[2]}${marker}${match[3]}`
+    ? `${match[1]}${marker}${match[2]}${closingMarker}${match[3]}`
     : content;
 }
 function serialize(parent: Node): string {
@@ -54,6 +54,13 @@ function serialize(parent: Node): string {
       (["I", "EM"].includes(node.tagName) || node.style.fontStyle === "italic")
     )
       content = wrap(content, "_");
+    if (
+      content &&
+      (node.tagName === "U" ||
+        node.style.textDecorationLine.includes("underline") ||
+        node.style.textDecoration.includes("underline"))
+    )
+      content = wrap(content, "<u>", "</u>");
     text += content;
     if (block && node.nextSibling && !text.endsWith("\n")) text += "\n";
   }
@@ -70,8 +77,16 @@ export function QuestionEditor({
   const field = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const lastValue = useRef<string | null>(null);
-  const [format, setFormat] = useState({ bold: false, italic: false });
-  const currentFormat = useRef({ bold: false, italic: false });
+  const [format, setFormat] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+  });
+  const currentFormat = useRef({
+    bold: false,
+    italic: false,
+    underline: false,
+  });
   const id = useId();
   function selectionChanged() {
     const selection = window.getSelection();
@@ -87,6 +102,7 @@ export function QuestionEditor({
     const next = {
       bold: document.queryCommandState("bold"),
       italic: document.queryCommandState("italic"),
+      underline: document.queryCommandState("underline"),
     };
     currentFormat.current = next;
     setFormat(next);
@@ -139,18 +155,21 @@ export function QuestionEditor({
     selection?.removeAllRanges();
     selection?.addRange(range);
   }
-  function toggle(style: "bold" | "italic") {
+  function toggle(style: "bold" | "italic" | "underline") {
+    selectionChanged();
     const enabled = !currentFormat.current[style];
     focus();
     if (enabled) {
-      const other = style === "bold" ? "italic" : "bold";
-      // Normalize a mixed selection before clearing the opposite style.
-      if (
-        document.queryCommandIndeterm(other) &&
-        !document.queryCommandState(other)
-      )
-        document.execCommand(other);
-      if (document.queryCommandState(other)) document.execCommand(other);
+      for (const other of ["bold", "italic", "underline"]) {
+        if (other === style) continue;
+        // Normalize a mixed selection before clearing other styles.
+        if (
+          document.queryCommandIndeterm(other) &&
+          !document.queryCommandState(other)
+        )
+          document.execCommand(other);
+        if (document.queryCommandState(other)) document.execCommand(other);
+      }
     }
     if (document.queryCommandState(style) !== enabled)
       document.execCommand(style);
@@ -193,6 +212,17 @@ export function QuestionEditor({
         >
           <Italic size={16} /> Italic
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          aria-label="Underline"
+          aria-pressed={format.underline}
+          title="Underline (Ctrl+U)"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => toggle("underline")}
+        >
+          <Underline size={16} /> Underline
+        </Button>
       </div>
       <div
         ref={field}
@@ -224,10 +254,11 @@ export function QuestionEditor({
           }
           if (
             (event.ctrlKey || event.metaKey) &&
-            ["b", "i"].includes(event.key.toLowerCase())
+            ["b", "i", "u"].includes(event.key.toLowerCase())
           ) {
             event.preventDefault();
-            toggle(event.key.toLowerCase() === "b" ? "bold" : "italic");
+            const key = event.key.toLowerCase();
+            toggle(key === "b" ? "bold" : key === "i" ? "italic" : "underline");
           }
         }}
         onPaste={(event) => {

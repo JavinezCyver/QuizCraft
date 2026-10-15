@@ -1,19 +1,24 @@
 export type InlinePart =
   | { type: "text"; text: string }
-  | { type: "bold" | "italic"; children: InlinePart[] };
+  | { type: "bold" | "italic" | "underline"; children: InlinePart[] };
 
 export function parseQuestionText(text: string, depth = 0): InlinePart[] {
   if (depth >= 20) return [{ type: "text", text }];
   const pattern =
-    /\*\*([\s\S]+?)\*\*|(?<![\p{L}\p{N}])_([^_]+?)_(?![\p{L}\p{N}])/gu;
+    /\*\*([\s\S]+?)\*\*|(?<![\p{L}\p{N}])_([^_]+?)_(?![\p{L}\p{N}])|<u>([\s\S]+?)<\/u>/gu;
   const parts: InlinePart[] = [];
   let end = 0;
   for (const match of text.matchAll(pattern)) {
     if (match.index! > end)
       parts.push({ type: "text", text: text.slice(end, match.index) });
     parts.push({
-      type: match[1] !== undefined ? "bold" : "italic",
-      children: parseQuestionText(match[1] ?? match[2], depth + 1),
+      type:
+        match[1] !== undefined
+          ? "bold"
+          : match[2] !== undefined
+            ? "italic"
+            : "underline",
+      children: parseQuestionText(match[1] ?? match[2] ?? match[3], depth + 1),
     });
     end = match.index! + match[0].length;
   }

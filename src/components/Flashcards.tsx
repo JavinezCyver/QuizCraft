@@ -12,6 +12,7 @@ import { api, type Quiz, type Question } from "../lib/api";
 import { Button } from "./ui/button";
 import { Select } from "./ui/select";
 import { FormattedQuestion } from "./FormattedQuestion";
+import { FlashcardFace } from "./FlashcardFace";
 import { plainQuestionText } from "../lib/question-format";
 import { highlightAnswer } from "../lib/answer-highlight";
 import { pendingReviewIds, type ReviewRating } from "../lib/review";
@@ -347,7 +348,7 @@ export function Flashcards({
       <Dialog.Portal>
         <Dialog.Overlay className="flashcards-backdrop" />
         <Dialog.Content
-          className="flashcards-page"
+          className={`flashcards-page${question?.questionImage || question?.answerImage ? " has-picture-card" : ""}`}
           onKeyDown={(event) => {
             if (
               (event.target as Element).closest(
@@ -553,9 +554,10 @@ export function Flashcards({
                   className={`flashcard-inner ${motion > 0 ? "swipe-next" : motion < 0 ? "swipe-previous" : ""}`}
                   key={`${question.id}-${index}`}
                 >
-                  <span
-                    className="flashcard-face flashcard-front"
-                    aria-hidden={flipped}
+                  <FlashcardFace
+                    side="front"
+                    hidden={flipped}
+                    fit={!!(question.questionImage || question.answerImage)}
                   >
                     <span className="eyebrow">
                       QUESTION{" "}
@@ -682,10 +684,11 @@ export function Flashcards({
                       <RotateCw size={17} />{" "}
                       {canReveal ? "Reveal answer" : "Answer reveal is off"}
                     </button>
-                  </span>
-                  <span
-                    className="flashcard-face flashcard-back"
-                    aria-hidden={!flipped}
+                  </FlashcardFace>
+                  <FlashcardFace
+                    side="back"
+                    hidden={!flipped}
+                    fit={!!(question.questionImage || question.answerImage)}
                   >
                     {!["multiple", "boolean"].includes(question.type) &&
                       typedAnswers[question.id]?.trim() && (
@@ -762,7 +765,7 @@ export function Flashcards({
                     >
                       <RotateCw size={17} /> Show question
                     </button>
-                  </span>
+                  </FlashcardFace>
                 </span>
                 <div
                   className="flashcard-ratings"

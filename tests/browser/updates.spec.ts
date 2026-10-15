@@ -1,3 +1,4 @@
+import { openSettings } from "./navigation";
 import { test, expect, type Page } from "@playwright/test";
 import appPackage from "../../package.json" with { type: "json" };
 
@@ -15,9 +16,7 @@ async function settings(page: Page) {
   await expect(page.locator("#startup-splash")).toHaveCount(0, {
     timeout: 10000,
   });
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   return page.getByRole("region", { name: "App updates", exact: true });
 }
 const latest = (version = nextVersion) => ({
@@ -170,9 +169,7 @@ for (const width of [320, 390, 768])
       section.getByRole("button", { name: "Check for updates" }),
     ).toBeDisabled();
     await page.getByRole("button", { name: "Close", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Open settings", exact: true })
-      .click();
+    await openSettings(page);
     await section.getByRole("button", { name: "Allow app updates" }).click();
     await section.getByRole("button", { name: "Install update" }).click();
     await expect(

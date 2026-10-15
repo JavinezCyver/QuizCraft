@@ -33,3 +33,21 @@ test("plain text, underscores within words, and incomplete formatting stay liter
     { type: "text", text: "<img src=x>" },
   ]);
 });
+
+test("underline preserves nested formatting and line breaks without interpreting arbitrary HTML", () => {
+  assert.deepEqual(parseQuestionText("<u>Bruce\n**Wayne**</u>!"), [
+    {
+      type: "underline",
+      children: [
+        { type: "text", text: "Bruce\n" },
+        { type: "bold", children: [{ type: "text", text: "Wayne" }] },
+      ],
+    },
+    { type: "text", text: "!" },
+  ]);
+  assert.equal(plainQuestionText("<u>Bruce</u> _Wayne_!"), "Bruce Wayne!");
+  const literal = '<u onclick="alert(1)">literal</u> <u>unfinished';
+  assert.deepEqual(parseQuestionText(literal), [
+    { type: "text", text: literal },
+  ]);
+});

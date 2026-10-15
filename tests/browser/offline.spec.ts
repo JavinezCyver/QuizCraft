@@ -1,4 +1,4 @@
-import { createQuiz } from "./navigation";
+import { createQuiz, openSettings } from "./navigation";
 import { test, expect, type Page } from "@playwright/test";
 
 const settings = {
@@ -80,9 +80,7 @@ async function readyOffline(page: Page) {
   await page.context().setOffline(true);
 }
 async function importFixture(page: Page, value = fixture) {
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", {
       name: "Import quizzes / restore backup",
@@ -135,9 +133,7 @@ test("restoring a backup preserves answers, emoji ratings, question IDs and the 
   await page
     .getByRole("button", { name: "Back to my quizzes", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", { name: "Export backup", exact: true })
     .click();
@@ -190,9 +186,7 @@ test("invalid backup progress is rejected atomically and stale progress is clear
   await page
     .getByRole("button", { name: "Back to my quizzes", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", { name: "Export backup", exact: true })
     .click();
@@ -231,9 +225,7 @@ test("invalid correct-choice imports are rejected without changing the library",
   await readyOffline(page);
   await importFixture(page);
   const before = await readData(page);
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", {
       name: "Import quizzes / restore backup",
@@ -272,9 +264,7 @@ test("Discover renders every deck when there are more than six", async ({
 }) => {
   await readyOffline(page);
   await importFixture(page);
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", {
       name: "Import quizzes / restore backup",
@@ -363,9 +353,7 @@ test("completed flashcards update statistics and history once, including after r
   await expect(
     page.locator(".achievement").filter({ hasText: "First discovery" }),
   ).toContainText("Unlocked!");
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", { name: "Export backup", exact: true })
     .click();
@@ -421,9 +409,7 @@ test("starts freely, opens again offline, and preserves bookmarks and settings",
     .first()
     .getByRole("button", { name: "Bookmark quiz" })
     .click();
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page.getByLabel("Display name").fill("Offline Learner");
   await page
     .getByRole("button", { name: "Save settings", exact: true })
@@ -520,9 +506,7 @@ test("deck titles open flashcards directly, preserve backups, and allow deletion
     page.getByRole("dialog", { name: "Flashcard study mode" }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", { name: "Export backup", exact: true })
     .click();
@@ -578,9 +562,7 @@ test("flashcards and quiz file imports work offline; invalid imports preserve da
   await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("dialog")).toContainText("Water is a liquid");
   await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", {
       name: "Import quizzes / restore backup",
@@ -958,9 +940,7 @@ test("question and answer pictures survive offline backup restore and respect an
     page.getByRole("img", { name: "Answer picture", exact: true }),
   ).toHaveAttribute("src", picture);
   await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", { name: "Export backup", exact: true })
     .click();
@@ -1110,9 +1090,7 @@ test("Android back closes overlays, leaves the editor, and keeps Discover open",
   await readyOffline(page);
   const back = () =>
     page.evaluate(() => window.dispatchEvent(new Event("quizcraft-back")));
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await expect(page.getByRole("dialog")).toBeVisible();
   await back();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -1538,9 +1516,7 @@ test("all shared dropdowns allow page scrolling and long menus scroll independen
   page,
 }) => {
   await readyOffline(page);
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await openSettings(page);
   await page
     .getByRole("button", {
       name: "Import quizzes / restore backup",

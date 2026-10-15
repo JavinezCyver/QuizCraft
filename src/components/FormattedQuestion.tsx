@@ -7,8 +7,10 @@ function renderParts(parts: InlinePart[]) {
       <Fragment key={index}>{part.text}</Fragment>
     ) : part.type === "bold" ? (
       <strong key={index}>{renderParts(part.children)}</strong>
-    ) : (
+    ) : part.type === "italic" ? (
       <em key={index}>{renderParts(part.children)}</em>
+    ) : (
+      <u key={index}>{renderParts(part.children)}</u>
     ),
   );
 }

@@ -192,7 +192,8 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
     [deleteError, setDeleteError] = useState(""),
     [grading, setGrading] = useState<any[]>([]);
   const toastId = useRef(0);
-  const notify = (message: string) => setToast({ id: ++toastId.current, message });
+  const notify = (message: string) =>
+    setToast({ id: ++toastId.current, message });
   const dismissToast = useCallback((id: number) => {
     setToast((current) => (current?.id === id ? null : current));
   }, []);
@@ -479,7 +480,13 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
           <span>Achievements</span>
           <span className="new-tag">NEW</span>
         </button>
-        <button className="nav-item" onClick={() => setProfile(true)}>
+        <button
+          className="nav-item"
+          onClick={() => {
+            setMobile(false);
+            setProfile(true);
+          }}
+        >
           <Settings size={19} />
           <span>Settings</span>
         </button>
@@ -529,13 +536,6 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
             <span className="community-note">
               <span /> Works fully offline
             </span>
-            <button
-              className="header-avatar"
-              onClick={() => setProfile(true)}
-              aria-label="Open settings"
-            >
-              {user.name[0]}
-            </button>
             {showCreateQuiz && !["home", "quizzes"].includes(view) && (
               <Button size="sm" onClick={createQuiz} aria-label="Create a Quiz">
                 <Plus size={16} />
