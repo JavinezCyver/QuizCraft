@@ -77,6 +77,7 @@ export function QuestionEditor({
   const field = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const lastValue = useRef<string | null>(null);
+  const initialized = useRef(false);
   const [format, setFormat] = useState({
     bold: false,
     italic: false,
@@ -155,18 +156,6 @@ export function QuestionEditor({
     // Read the restored editor selection, not a stale state from before a touch blur.
     const mixed = document.queryCommandIndeterm(style);
     const enabled = mixed || !document.queryCommandState(style);
-    if (enabled) {
-      for (const other of ["bold", "italic", "underline"]) {
-        if (other === style) continue;
-        // Normalize a mixed selection before clearing other styles.
-        if (
-          document.queryCommandIndeterm(other) &&
-          !document.queryCommandState(other)
-        )
-          document.execCommand(other);
-        if (document.queryCommandState(other)) document.execCommand(other);
-      }
-    }
     // Browsers disagree on whether a mixed underline command first clears or applies it.
     if (mixed) document.execCommand(style);
     if (document.queryCommandState(style) !== enabled)
@@ -235,6 +224,19 @@ export function QuestionEditor({
         contentEditable
         suppressContentEditableWarning
         data-placeholder="Ask something interesting..."
+        onFocus={() => {
+          if (!initialized.current) {
+            initialized.current = true;
+            // A new empty editor can inherit the previous editor's typing styles.
+            if (!field.current?.textContent) {
+              for (const style of ["bold", "italic", "underline"]) {
+                if (document.queryCommandState(style))
+                  document.execCommand(style);
+              }
+            }
+          }
+          selectionChanged();
+        }}
         onInput={sync}
         onKeyDown={(event) => {
           if (

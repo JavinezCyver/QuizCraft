@@ -850,18 +850,22 @@ test("the editor plus adds a clean question without copying the current content"
     page.getByRole("textbox", { name: "Your question", exact: true }),
   ).toHaveText("");
   await expect(
-    page.getByRole("textbox", { name: "Answer explanation", exact: true }),
-  ).toHaveValue("");
+    page.getByRole("textbox", {
+      name: "Answer explanation (optional)",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("combobox", { name: "Question type", exact: true }),
-  ).toContainText("Multiple choice");
-  for (let i = 1; i <= 4; i++)
-    await expect(
-      page.getByRole("textbox", { name: `Option ${i}`, exact: true }),
-    ).toHaveValue("");
+  ).toContainText("Fill in the blank");
+  await expect(
+    page.getByRole("textbox", {
+      name: /^Accepted answers \(one per line\)/,
+    }),
+  ).toHaveValue("");
   await expect(
     page.getByRole("checkbox", { name: "Mark option 1 correct", exact: true }),
-  ).not.toBeChecked();
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   const questions = (await readData(page)).quizzes[0].questions;
   expect(questions).toHaveLength(2);
@@ -869,6 +873,8 @@ test("the editor plus adds a clean question without copying the current content"
   expect(questions[0].accepted).toEqual(["True"]);
   expect(questions[1].id).not.toBe(questions[0].id);
   expect(questions[1].accepted).toEqual([]);
+  expect(questions[1].options).toEqual([]);
+  expect(questions[1].explanation).toBe("");
 });
 
 test("new installations are empty and another device never receives local quizzes", async ({

@@ -3,6 +3,104 @@ import { test, expect, type Locator } from "@playwright/test";
 
 test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
 
+test("the bottom New Question button adds a blank question and preserves the previous one", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await createQuiz(page);
+  await page
+    .getByRole("button", { name: "Add first question", exact: true })
+    .click();
+  const field = page.getByRole("textbox", {
+    name: "Your question",
+    exact: true,
+  });
+  await field.fill("First question stays saved");
+  const type = page.getByRole("combobox", {
+    name: "Question type",
+    exact: true,
+  });
+  const answers = page.getByLabel("Accepted answers (one per line)");
+  await expect(type).toHaveText("Fill in the blank");
+  await answers.fill("First answer");
+  await page.getByRole("button", { name: "New Question", exact: true }).tap();
+  await expect(
+    page.getByRole("heading", { name: "Question 2", exact: true }),
+  ).toBeInViewport();
+  await expect(field).toHaveText("");
+  await expect(type).toHaveText("Fill in the blank");
+  await expect(answers).toHaveValue("");
+  await field.fill("Second question stays saved");
+  await page
+    .getByRole("button", { name: "Previous question", exact: true })
+    .click();
+  await expect(field).toHaveText("First question stays saved");
+  await expect(answers).toHaveValue("First answer");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Open navigation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "My quizzes", exact: true }).click();
+  await page.getByRole("button", { name: "Edit quiz", exact: true }).click();
+  await expect(field).toHaveText("First question stays saved");
+  await page
+    .getByRole("button", { name: "Next question", exact: true })
+    .click();
+  await expect(field).toHaveText("Second question stays saved");
+  await expect(type).toHaveText("Fill in the blank");
+  await page
+    .getByRole("button", { name: "Add blank question", exact: true })
+    .click();
+  await expect(type).toHaveText("Fill in the blank");
+});
+
+test("categories are created from the dropdown and saved with the draft", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await createQuiz(page);
+  const category = page.getByRole("combobox", { name: "Quiz category" });
+  const original = await category.textContent();
+  await expect(page.getByLabel("New category", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Add category", exact: true }),
+  ).toHaveCount(0);
+  await category.click();
+  await page
+    .getByRole("option", { name: "+ Add new category", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Add new category",
+    exact: true,
+  });
+  await expect(dialog.getByLabel("Category name")).toBeFocused();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(category).toHaveText(original!);
+  await category.click();
+  await page
+    .getByRole("option", { name: "+ Add new category", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Create category", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Enter a category from 1 to 60 characters.",
+  );
+  await dialog.getByLabel("Category name").fill("  Clinical   Pharmacology  ");
+  await dialog.getByLabel("Category name").press("Enter");
+  await expect(dialog).toHaveCount(0);
+  await expect(category).toHaveText("Clinical Pharmacology");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Open navigation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "My quizzes", exact: true }).click();
+  await page.getByRole("button", { name: "Edit quiz", exact: true }).click();
+  await expect(category).toHaveText("Clinical Pharmacology");
+});
+
 test("saving and previewing wait for question pictures to finish processing", async ({
   page,
 }) => {
@@ -162,11 +260,11 @@ test("every flashcard type supports separate question and answer pictures, repla
       await page
         .getByRole("button", { name: "Add blank question", exact: true })
         .click();
-      await page
-        .getByRole("combobox", { name: "Question type", exact: true })
-        .click();
-      await page.getByRole("option", { name: type, exact: true }).click();
     }
+    await page
+      .getByRole("combobox", { name: "Question type", exact: true })
+      .click();
+    await page.getByRole("option", { name: type, exact: true }).click();
     await page
       .getByLabel("Your question", { exact: true })
       .fill(`Picture question ${index + 1}`);
@@ -340,6 +438,12 @@ test("mixed flashcard deck saves multiple correct choices and previews every typ
   await page
     .getByLabel("Your question", { exact: true })
     .fill("Which are planets?");
+  await page
+    .getByRole("combobox", { name: "Question type", exact: true })
+    .click();
+  await page
+    .getByRole("option", { name: "Multiple choice", exact: true })
+    .click();
   for (const [i, value] of ["Mars", "Moon", "Venus", "Sun"].entries())
     await page
       .getByRole("textbox", { name: `Option ${i + 1}`, exact: true })
@@ -496,6 +600,12 @@ test("multiple choice automatically uses single or multiple selection from the m
   await page
     .getByRole("textbox", { name: "Your question", exact: true })
     .fill("Choose the correct characters");
+  await page
+    .getByRole("combobox", { name: "Question type", exact: true })
+    .click();
+  await page
+    .getByRole("option", { name: "Multiple choice", exact: true })
+    .click();
   for (const [index, option] of [
     "sasuke",
     "kakashi",
@@ -769,14 +879,18 @@ test("Underline toggles, shortcuts, and saved flashcards work on a narrow screen
   await field.press("Control+u");
   await expect(field.locator("u")).toHaveText("Plain underlined text");
   await bold.tap();
-  await expect(underline).toHaveAttribute("aria-pressed", "false");
-  await expect(field.locator("u")).toHaveCount(0);
-  await italic.tap();
-  await underline.tap();
-  await expect(bold).toHaveAttribute("aria-pressed", "false");
-  await expect(italic).toHaveAttribute("aria-pressed", "false");
   await expect(underline).toHaveAttribute("aria-pressed", "true");
-  await expect(field.locator("b, strong, i, em")).toHaveCount(0);
+  await expect(field.locator("u")).toHaveText("Plain underlined text");
+  await italic.tap();
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await expect(italic).toHaveAttribute("aria-pressed", "true");
+  await expect(underline).toHaveAttribute("aria-pressed", "true");
+  await underline.tap();
+  await expect(underline).toHaveAttribute("aria-pressed", "false");
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await expect(italic).toHaveAttribute("aria-pressed", "true");
+  await field.press("Control+u");
+  await expect(underline).toHaveAttribute("aria-pressed", "true");
   const bounds = await underline.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
@@ -786,6 +900,8 @@ test("Underline toggles, shortcuts, and saved flashcards work on a narrow screen
   );
   await expect(prompt).toHaveText("Plain underlined text");
   await expect(prompt.locator("u")).toHaveText("Plain underlined text");
+  await expect(prompt.locator("strong")).toHaveText("Plain underlined text");
+  await expect(prompt.locator("em")).toHaveText("Plain underlined text");
   await expect(prompt.locator("u")).toHaveCSS(
     "text-decoration-line",
     "underline",
@@ -793,6 +909,8 @@ test("Underline toggles, shortcuts, and saved flashcards work on a narrow screen
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Edit quiz", exact: true }).tap();
   await expect(field.locator("u")).toHaveText("Plain underlined text");
+  await expect(field.locator("b, strong")).toHaveText("Plain underlined text");
+  await expect(field.locator("i, em")).toHaveText("Plain underlined text");
 });
 
 test("clicking Bold or Italic twice before typing returns to normal text", async ({
@@ -837,7 +955,47 @@ test("clicking Bold or Italic twice before typing returns to normal text", async
   await expect(prompt.locator("strong, em")).toHaveCount(0);
 });
 
-test("Bold and Italic are mutually exclusive for typing and mixed selections", async ({
+test("formatting starts off for each new question and toggles only when chosen", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await createQuiz(page);
+  await page
+    .getByRole("button", { name: "Add first question", exact: true })
+    .click();
+  const field = page.getByRole("textbox", {
+    name: "Your question",
+    exact: true,
+  });
+  const buttons = ["Bold", "Italic", "Underline"].map((name) =>
+    page.getByRole("button", { name, exact: true }),
+  );
+  await field.focus();
+  for (const button of buttons)
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+  await field.pressSequentially("Plain");
+  await expect(field.locator("b, strong, i, em, u")).toHaveCount(0);
+  for (const button of buttons) await button.tap();
+  await field.pressSequentially(" formatted");
+  for (const button of buttons)
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+  await page
+    .getByRole("button", { name: "Add blank question", exact: true })
+    .tap();
+  for (const button of buttons)
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+  await field.focus();
+  for (const button of buttons)
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+  await field.pressSequentially("New plain question");
+  await expect(field.locator("b, strong, i, em, u")).toHaveCount(0);
+  await buttons[0].tap();
+  await expect(buttons[0]).toHaveAttribute("aria-pressed", "true");
+  await expect(buttons[1]).toHaveAttribute("aria-pressed", "false");
+  await expect(buttons[2]).toHaveAttribute("aria-pressed", "false");
+});
+
+test("Bold and Italic combine independently for typing and mixed selections", async ({
   page,
 }) => {
   await page.goto("/");
@@ -853,31 +1011,31 @@ test("Bold and Italic are mutually exclusive for typing and mixed selections", a
   const italic = page.getByRole("button", { name: "Italic", exact: true });
   await bold.tap();
   await italic.tap();
-  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
   await expect(italic).toHaveAttribute("aria-pressed", "true");
-  await field.pressSequentially("Italic");
-  await bold.tap();
+  await field.pressSequentially("Both");
+  await italic.tap();
   await expect(bold).toHaveAttribute("aria-pressed", "true");
   await expect(italic).toHaveAttribute("aria-pressed", "false");
   await field.pressSequentially(" Bold");
-  await expect(field.locator("i, em")).toHaveText("Italic");
+  await expect(field.locator("i, em")).toHaveText("Both");
   await expect(field.locator("b, strong")).toContainText("Bold");
   await field.press("Control+a");
   await italic.tap();
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await expect(italic).toHaveAttribute("aria-pressed", "true");
+  await expect(field.locator("i, em")).toContainText("Both Bold");
+  await field.press("Control+b");
   await expect(bold).toHaveAttribute("aria-pressed", "false");
   await expect(italic).toHaveAttribute("aria-pressed", "true");
   await expect(field.locator("b, strong")).toHaveCount(0);
-  await field.press("Control+b");
-  await expect(bold).toHaveAttribute("aria-pressed", "true");
-  await expect(italic).toHaveAttribute("aria-pressed", "false");
-  await expect(field.locator("i, em")).toHaveCount(0);
   await page.getByRole("button", { name: "Preview", exact: true }).tap();
   const prompt = page.locator(
     '.flashcard-front[aria-hidden="false"] .flashcard-text',
   );
-  await expect(prompt).toHaveText("Italic Bold");
-  await expect(prompt.locator("strong")).toHaveText("Italic Bold");
-  await expect(prompt.locator("em")).toHaveCount(0);
+  await expect(prompt).toHaveText("Both Bold");
+  await expect(prompt.locator("em")).toHaveText("Both Bold");
+  await expect(prompt.locator("strong")).toHaveCount(0);
 });
 
 test("page labels stay unselected, clicking has no focus outline, and editor Select All stays local", async ({

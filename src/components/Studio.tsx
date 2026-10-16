@@ -22,9 +22,9 @@ import { readCoverImage } from "../lib/cover";
 import { CardImageUpload } from "./CardImageUpload";
 const fresh = (): Question => ({
   id: crypto.randomUUID(),
-  type: "multiple",
+  type: "blank",
   prompt: "",
-  options: ["", "", "", ""],
+  options: [],
   accepted: [],
   explanation: "",
   points: 10,
@@ -52,10 +52,12 @@ export function Studio({
     [error, setError] = useState(""),
     [knownCategories, setKnownCategories] = useState<string[]>([]),
     [newCategory, setNewCategory] = useState(""),
+    [addCategoryOpen, setAddCategoryOpen] = useState(false),
     [categoryError, setCategoryError] = useState(""),
     [deleteCategoryOpen, setDeleteCategoryOpen] = useState(false),
     [deletingCategory, setDeletingCategory] = useState(false);
   const coverRequest = useRef(0);
+  const questionPanel = useRef<HTMLElement>(null);
   const imagesBusy = coverBusy || Object.values(imageUploads).some(Boolean);
   const imageBusy = (key: string, busy: boolean) =>
     setImageUploads((current) =>
@@ -158,6 +160,7 @@ export function Studio({
     change({ category: canonical });
     setNewCategory("");
     setCategoryError("");
+    setAddCategoryOpen(false);
     notify("Category selected: " + canonical);
   }
   async function deleteCategory() {
@@ -252,12 +255,57 @@ export function Studio({
     if (target < 0 || target >= list.length) return;
     setSelected(target);
   }
+  function addQuestion() {
+    if (imagesBusy) return;
+    change({ questions: [...list, fresh()] });
+    setSelected(list.length);
+    requestAnimationFrame(() => {
+      questionPanel.current?.scrollIntoView({ block: "start" });
+    });
+  }
   if (!quiz)
     return (
       <div className="page-loading">{error || "Opening your studio…"}</div>
     );
   return (
     <>
+      <Dialog
+        open={addCategoryOpen}
+        onOpenChange={setAddCategoryOpen}
+        title="Add new category"
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            addCategory();
+          }}
+        >
+          <label>
+            Category name
+            <input
+              autoFocus
+              value={newCategory}
+              maxLength={60}
+              placeholder="e.g. Anatomy, Pharmacology, Nursing"
+              onChange={(event) => {
+                setNewCategory(event.target.value);
+                setCategoryError("");
+              }}
+            />
+          </label>
+          {categoryError && <p role="alert">{categoryError}</p>}
+          <div className="delete-dialog-actions">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAddCategoryOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit">Create category</Button>
+          </div>
+        </form>
+      </Dialog>
       <Dialog
         open={deleteCategoryOpen}
         onOpenChange={(open) => {
@@ -360,11 +408,23 @@ export function Studio({
                     <Select
                       label="Quiz category"
                       value={quiz.category}
-                      onChange={(category) => change({ category })}
-                      options={categoryOptions.map((value) => ({
-                        value,
-                        label: value,
-                      }))}
+                      onChange={(category) => {
+                        if (category === "\u0000add-category") {
+                          setNewCategory("");
+                          setCategoryError("");
+                          setAddCategoryOpen(true);
+                        } else change({ category });
+                      }}
+                      options={[
+                        ...categoryOptions.map((value) => ({
+                          value,
+                          label: value,
+                        })),
+                        {
+                          value: "\u0000add-category",
+                          label: "+ Add new category",
+                        },
+                      ]}
                     />
                     <button
                       type="button"
@@ -382,34 +442,6 @@ export function Studio({
                   </div>
                 </label>
               </div>
-              <div className="custom-category-row">
-                <label>
-                  New category
-                  <input
-                    value={newCategory}
-                    maxLength={60}
-                    placeholder="e.g. Anatomy, Pharmacology, Nursing"
-                    onChange={(event) => {
-                      setNewCategory(event.target.value);
-                      setCategoryError("");
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        addCategory();
-                      }
-                    }}
-                  />
-                </label>
-                <Button type="button" variant="outline" onClick={addCategory}>
-                  <Plus size={16} /> Add category
-                </Button>
-              </div>
-              <p className="muted">
-                Add a subject for your field. It is saved with this quiz and
-                available for your other quizzes.
-              </p>
-              {categoryError && <p role="alert">{categoryError}</p>}
               <label>
                 <Image size={15} /> Cover image (saved offline)
                 <input
@@ -459,8 +491,8 @@ export function Studio({
                   </button>
                 )}
               </label>
-              <label>
-                Color theme
+              <div className="theme-field" role="group" aria-label="Color theme">
+                <span>Color theme</span>
                 <div className="theme-options">
                   {[
                     "purple",
@@ -474,6 +506,7 @@ export function Studio({
                       key={c}
                       type="button"
                       aria-label={`${c} theme`}
+                      aria-pressed={quiz.theme === c}
                       onClick={() => change({ theme: c })}
                       className={`theme-swatch ${c} ${quiz.theme === c ? "chosen" : ""}`}
                     >
@@ -481,10 +514,14 @@ export function Studio({
                     </button>
                   ))}
                 </div>
-              </label>
+              </div>
             </section>
             {question ? (
-              <section className="panel question-editor" key={question.id}>
+              <section
+                ref={questionPanel}
+                className="panel question-editor"
+                key={question.id}
+              >
                 <div className="section-heading">
                   <h2>Question {selected + 1}</h2>
                   <div className="button-row">
@@ -511,12 +548,7 @@ export function Studio({
                       aria-label="Add blank question"
                       disabled={imagesBusy}
                       title="Add blank question"
-                      onClick={() => {
-                        change({
-                          questions: [...list, fresh()],
-                        });
-                        setSelected(list.length);
-                      }}
+                      onClick={addQuestion}
                     >
                       <Plus size={17} />
                     </button>
@@ -684,8 +716,8 @@ export function Studio({
                   onChange={(answerImage) => update({ answerImage })}
                 />
                 {question.type !== "blank" && (
-                  <label>
-                    Answer explanation
+                  <label className="answer-explanation-field">
+                    Answer explanation (optional)
                     <textarea
                       value={question.explanation}
                       onChange={(e) => update({ explanation: e.target.value })}
@@ -693,6 +725,16 @@ export function Studio({
                     />
                   </label>
                 )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="new-question-button"
+                  disabled={imagesBusy}
+                  onClick={addQuestion}
+                >
+                  <Plus size={16} /> New Question
+                </Button>
               </section>
             ) : (
               <div className="empty-state panel">

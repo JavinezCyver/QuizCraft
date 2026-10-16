@@ -8,6 +8,7 @@ export default defineConfig({
     "flashcard-responsive.spec.ts",
     "updates.spec.ts",
     "review-regressions.spec.ts",
+    "editor-responsive.spec.ts",
   ],
   timeout: 45000,
   workers: 1,

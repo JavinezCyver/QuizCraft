@@ -60,15 +60,22 @@ test("a medical creator adds a category, reopens it and publishes to Discover", 
   await navigate("My quizzes");
   await page.getByRole("button", { name: "Edit quiz", exact: true }).click();
   await page.getByRole("combobox", { name: "Quiz category" }).click();
-  await expect(page.getByRole("option")).toHaveText(["General Knowledge"]);
+  await expect(page.getByRole("option")).toHaveText([
+    "General Knowledge",
+    "+ Add new category",
+  ]);
   await expect(
     page.getByRole("option", { name: "Education", exact: true }),
   ).toHaveCount(0);
-  await page.keyboard.press("Escape");
   await page
-    .getByLabel("New category", { exact: true })
+    .getByRole("option", { name: "+ Add new category", exact: true })
+    .click();
+  await page
+    .getByLabel("Category name", { exact: true })
     .fill("Clinical Pharmacology");
-  await page.getByRole("button", { name: "Add category", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Create category", exact: true })
+    .click();
   await expect(
     page.getByRole("combobox", { name: "Quiz category" }),
   ).toHaveText("Clinical Pharmacology");
