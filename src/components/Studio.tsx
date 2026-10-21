@@ -81,7 +81,33 @@ export function Studio({
     baseQuiz = useRef<Quiz | null>(null),
     mounted = useRef(true),
     dirty = useRef(false);
-  latestQuiz.current = quiz;
+  const recoveryKey = `quizcraft-draft-recovery:${id}`;
+  const recoveryOwner = useRef(crypto.randomUUID());
+  function stashRecovery() {
+    if (!dirty.current || !latestQuiz.current || !baseQuiz.current) return true;
+    try {
+      sessionStorage.setItem(
+        recoveryKey,
+        JSON.stringify({
+          owner: recoveryOwner.current,
+          draft: latestQuiz.current,
+          base: baseQuiz.current,
+        }),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function clearRecovery() {
+    try {
+      const text = sessionStorage.getItem(recoveryKey);
+      if (text && JSON.parse(text).owner === recoveryOwner.current)
+        sessionStorage.removeItem(recoveryKey);
+    } catch {
+      /* Storage may be disabled. */
+    }
+  }
   function queueSave(status: Quiz["status"] = "draft") {
     const pending = saveQueue.current
       .catch(() => {})
@@ -105,7 +131,10 @@ export function Studio({
         );
         baseQuiz.current = saved;
         latestQuiz.current = next;
-        if (current === version.current) dirty.current = false;
+        if (current === version.current) {
+          dirty.current = false;
+          clearRecovery();
+        }
         if (mounted.current) setQuiz(next);
         onSaved();
         return saved;
@@ -115,9 +144,20 @@ export function Studio({
   }
   useEffect(() => {
     mounted.current = true;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      // Keep a same-tab recovery copy synchronously before a reload can cancel
+      // IndexedDB work. Do not serialize image-heavy drafts on every keystroke.
+      if (dirty.current && !stashRecovery()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
     return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
       mounted.current = false;
       if (dirty.current && latestQuiz.current) {
+        stashRecovery();
         void queueSave().catch((e) =>
           notify("Draft could not be saved: " + e.message),
         );
@@ -136,15 +176,46 @@ export function Studio({
       .then((q) => {
         if (canceled) return;
         baseQuiz.current = q;
-        setQuiz({
+        let draft: Quiz = {
           ...q,
           questions: q.questions?.map((question) =>
             question.type === "short"
               ? { ...question, type: "blank" }
               : question,
           ),
-        });
-        setSaving("All changes saved");
+        };
+        let recovery: { draft: Quiz; base: Quiz } | null = null;
+        try {
+          const text = sessionStorage.getItem(recoveryKey);
+          if (text) {
+            const value = JSON.parse(text);
+            if (
+              value.draft?.id === id &&
+              value.base?.id === id &&
+              Array.isArray(value.draft.questions) &&
+              Array.isArray(value.base.questions)
+            )
+              recovery = value;
+          }
+        } catch {
+          /* Load the saved quiz when recovery storage is unavailable. */
+        }
+        if (recovery) {
+          try {
+            draft = mergeQuizEdits(q, recovery.draft, recovery.base);
+          } catch (error) {
+            // Keep the recovered draft visible without overwriting another tab.
+            draft = recovery.draft;
+            baseQuiz.current = recovery.base;
+            setError((error as Error).message);
+          }
+          dirty.current = true;
+          version.current++;
+        }
+        latestQuiz.current = draft;
+        if (recovery) stashRecovery();
+        setQuiz(draft);
+        setSaving(recovery ? "Recovered unsaved draft" : "All changes saved");
       })
       .catch((e) => {
         if (!canceled) setError(e.message);
@@ -226,9 +297,12 @@ export function Studio({
       dirty.current = false;
       if (baseQuiz.current)
         baseQuiz.current = { ...baseQuiz.current, category: "Uncategorized" };
-      setQuiz((current) =>
-        current ? { ...current, category: "Uncategorized" } : current,
-      );
+      const current = latestQuiz.current;
+      if (current) {
+        const next = { ...current, category: "Uncategorized" };
+        latestQuiz.current = next;
+        setQuiz(next);
+      }
       setSaving("All changes saved");
       onSaved();
       setDeleteCategoryOpen(false);
@@ -272,6 +346,7 @@ export function Studio({
       return;
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    stashRecovery();
     try {
       let saved: Quiz;
       do {

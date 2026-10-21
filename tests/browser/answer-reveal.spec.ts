@@ -322,7 +322,7 @@ test("dark mode keeps correct and incorrect choice borders distinct", async ({
 });
 
 for (const correct of [false, true]) {
-test(`${correct ? "correct" : "incorrect"} completed answers remain locked through review and reload until refresh`, async ({ page }) => {
+test(`${correct ? "correct" : "incorrect"} completed answers stay locked for feedback and clear on an unsatisfied retry`, async ({ page }) => {
   await loadDeck(page);
   const front = page.locator('.flashcard-front[aria-hidden="false"]');
   const selected = correct ? "A. Mars" : "B. Moon";
@@ -346,11 +346,11 @@ test(`${correct ? "correct" : "incorrect"} completed answers remain locked throu
   await page.getByRole("button", { name: "SATISFIED", exact: true }).click();
   await page.getByRole("button", { name: "Review remaining", exact: true }).click();
   await expect(front).toContainText("Choose the planet");
-  await expect(front.locator(".flashcard-option:disabled")).toHaveCount(2);
+  await expect(front.locator(".flashcard-option:disabled")).toHaveCount(0);
   await expect(front.getByRole("button", { name: selected, exact: true }))
-    .toHaveAttribute("aria-pressed", "true");
+    .toHaveAttribute("aria-pressed", "false");
   await page.reload();
-  await expect(front.locator(".flashcard-option:disabled")).toHaveCount(2);
+  await expect(front.locator(".flashcard-option:disabled")).toHaveCount(0);
   await page.getByRole("button", { name: "Start again", exact: true }).click();
   await expect(front.locator(".flashcard-option:disabled")).toHaveCount(0);
   await expect(front.locator('.flashcard-option[aria-pressed="true"]')).toHaveCount(0);

@@ -1,11 +1,16 @@
 export type ReviewRating = "unrated" | "bad" | "good" | "satisfied";
 
-// Build the next pass only after the current pass has ended.
+// After each pass, repeat unanswered, incorrect, and unsatisfied cards.
 export function pendingReviewIds(
   ids: string[],
   ratings: Record<string, ReviewRating>,
   answeredIds: string[],
+  correctIds: string[] = answeredIds,
 ): string[] {
   const answered = new Set(answeredIds);
-  return ids.filter((id) => !answered.has(id) || ratings[id] !== "satisfied");
+  const correct = new Set(correctIds);
+  return ids.filter(
+    (id) =>
+      !answered.has(id) || !correct.has(id) || ratings[id] !== "satisfied",
+  );
 }

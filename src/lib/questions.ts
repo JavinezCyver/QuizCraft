@@ -33,6 +33,23 @@ export function optionIndices(question: Question, options: string[]): number[] {
   });
 }
 
+export function isStudyAnswerCorrect(
+  question: Question,
+  selected: number[] = [],
+  typed = "",
+): boolean {
+  if (!hasCompleteAnswer(question, selected, typed)) return false;
+  if (["multiple", "boolean"].includes(question.type))
+    return matchesSelectedOptions(question, selected);
+  // Free-response questions without an answer key are self-assessed.
+  if (
+    question.type === "short" &&
+    !question.accepted.some((value) => value.trim())
+  )
+    return true;
+  return matchesAnswer(question, typed);
+}
+
 export function reorderOptions(question: Question, order: number[]): Question {
   const correct = new Set(correctIndices(question));
   return {

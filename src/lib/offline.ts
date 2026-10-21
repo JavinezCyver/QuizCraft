@@ -1,9 +1,37 @@
-import { matchesAnswer, hasDuplicateOptions } from "./questions";
+import {
+  matchesAnswer,
+  hasDuplicateOptions,
+  correctIndices,
+} from "./questions";
 import type { Quiz, User, History } from "./api";
 import type { StudyProgress } from "./study-progress";
 import { mergeQuizEdits } from "./quiz-edit";
 
 export const MAX_QUIZ_QUESTIONS = 500;
+
+export function assertQuizReady(quiz: Quiz) {
+  if (
+    !quiz.questions?.length ||
+    quiz.questions.some(
+      (question) =>
+        !question.prompt.trim() ||
+        (question.type !== "short" &&
+          !question.accepted.some((answer) => answer.trim())) ||
+        (question.type === "boolean" &&
+          correctIndices(question).length !== 1) ||
+        (["multiple", "boolean"].includes(question.type) &&
+          (question.options.length < 2 ||
+            question.options.some((option) => !option.trim()) ||
+            !correctIndices(question).length ||
+            !question.accepted.every((answer) =>
+              question.options.includes(answer),
+            ))),
+    )
+  )
+    throw new Error(
+      "Complete every question and its correct answer before making the quiz ready.",
+    );
+}
 
 export const localUser: User = {
   id: "local",
@@ -425,25 +453,7 @@ export function offlineRequest<T>(
             throw new Error(
               "Answer choices must be different. Rename or remove duplicate choices before publishing.",
             );
-          if (
-            updated.status === "published" &&
-            (!updated.questions!.length ||
-              updated.questions!.some(
-                (question) =>
-                  !question.prompt.trim() ||
-                  (question.type !== "short" &&
-                    !question.accepted.some((answer) => answer.trim())) ||
-                  (["multiple", "boolean"].includes(question.type) &&
-                    (question.options.length < 2 ||
-                      question.options.some((s) => !s.trim()) ||
-                      !question.accepted.every((answer) =>
-                        question.options.includes(answer),
-                      ))),
-              ))
-          )
-            throw new Error(
-              "Complete every question and its correct answer before making the quiz ready.",
-            );
+          if (updated.status === "published") assertQuizReady(updated);
           Object.assign(q, updated);
           return q;
         }

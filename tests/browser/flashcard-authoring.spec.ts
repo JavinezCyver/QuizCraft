@@ -554,7 +554,7 @@ test("mixed flashcard deck saves multiple correct choices and previews every typ
   await page.getByRole("button", { name: "BAD", exact: true }).tap();
   await page.getByRole("button", { name: "Previous", exact: true }).tap();
   await page.getByRole("button", { name: "Next card", exact: true }).tap();
-  await expect(typedAnswer).toHaveValue("My guess");
+  await expect(typedAnswer).toHaveValue("");
   await typedAnswer.fill("Sun");
   await front.getByRole("button", { name: "Reveal answer", exact: true }).tap();
   await expect(back).toContainText("Your answer: Sun");

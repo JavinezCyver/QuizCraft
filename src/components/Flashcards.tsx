@@ -27,6 +27,7 @@ import {
   allowsMultipleSelections,
   correctIndices,
   hasCompleteAnswer,
+  isStudyAnswerCorrect,
   optionIndices,
   reorderOptions,
 } from "../lib/questions";
@@ -345,6 +346,20 @@ export function Flashcards({
     [allQuestions, selections, typedAnswers],
   );
   const answeredSet = useMemo(() => new Set(answeredIds), [answeredIds]);
+  const correctIds = useMemo(
+    () =>
+      allQuestions
+        .filter((card) =>
+          isStudyAnswerCorrect(
+            card,
+            selections[card.id],
+            typedAnswers[card.id],
+          ),
+        )
+        .map((card) => card.id),
+    [allQuestions, selections, typedAnswers],
+  );
+  const correctSet = useMemo(() => new Set(correctIds), [correctIds]);
   const visitedIds = useMemo(
     () => new Set(sequence.slice(0, index + 1)),
     [sequence, index],
@@ -398,9 +413,6 @@ export function Flashcards({
   function isAnswered(card: Question) {
     return answeredSet.has(card.id);
   }
-  function hasLockedAnswer(card: Question) {
-    return ["multiple", "boolean"].includes(card.type) && isAnswered(card);
-  }
   const unanswered = useMemo(
     () => allQuestions.filter((card) => !answeredSet.has(card.id)),
     [allQuestions, answeredSet],
@@ -411,9 +423,32 @@ export function Flashcards({
         allQuestions.map((card) => card.id),
         ratings,
         answeredIds,
+        correctIds,
       ),
-    [allQuestions, ratings, answeredIds],
+    [allQuestions, ratings, answeredIds, correctIds],
   );
+  function clearReviewAnswers(ids: string[]) {
+    const resetting = new Set(ids);
+    setSelections((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) => !resetting.has(id)),
+      ),
+    );
+    setTypedAnswers((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) => !resetting.has(id)),
+      ),
+    );
+  }
+  function prepareRetry(id: string | undefined, currentRatings = ratings) {
+    if (
+      id &&
+      (currentRatings[id] === "bad" ||
+        currentRatings[id] === "good" ||
+        (answeredSet.has(id) && !correctSet.has(id)))
+    )
+      clearReviewAnswers([id]);
+  }
   const currentUnanswered = !!question && !isAnswered(question);
   const requiredNoteId = question
     ? `required-answer-${question.id}`
@@ -422,6 +457,11 @@ export function Flashcards({
     if (finishing) return;
     setCelebration(null);
     setReviewFilter(value);
+    prepareRetry(
+      allQuestions.find(
+        (card) => value === "all" || ratingFor(card.id) === value,
+      )?.id,
+    );
     setSequence(
       allQuestions
         .filter((card) => value === "all" || ratingFor(card.id) === value)
@@ -435,6 +475,12 @@ export function Flashcards({
   }
   function rate(rating: ReviewRating) {
     if (!question || expired || finishing) return;
+    if (
+      rating === "satisfied" &&
+      isAnswered(question) &&
+      !correctSet.has(question.id)
+    )
+      rating = "bad";
     const nextRatings = { ...ratings, [question.id]: rating };
     setRatings(nextRatings);
     if (reviewFilter !== "all" && rating !== reviewFilter) {
@@ -442,6 +488,13 @@ export function Flashcards({
       const remaining = sequence
         .slice(index + 1)
         .filter((id) => ratingFor(id, nextRatings) === reviewFilter);
+      prepareRetry(
+        remaining[0] ??
+          allQuestions.find(
+            (card) => ratingFor(card.id, nextRatings) === reviewFilter,
+          )?.id,
+        nextRatings,
+      );
       setSequence(
         remaining.length
           ? remaining
@@ -459,6 +512,8 @@ export function Flashcards({
   }
   async function move(direction: number, swipeRating?: ReviewRating) {
     if (!quiz || loading || expired || finishing) return;
+    if (swipeRating === "bad" && question && correctSet.has(question.id))
+      return;
     setCelebration(null);
     const answerComplete =
       question &&
@@ -469,7 +524,9 @@ export function Flashcards({
       direction > 0 && question
         ? !answerComplete
           ? "unrated"
-          : swipeRating
+          : swipeRating === "satisfied" && !correctSet.has(question.id)
+            ? "bad"
+            : swipeRating
         : undefined;
     const nextRatings =
       nextRating && question
@@ -483,6 +540,7 @@ export function Flashcards({
         .slice(index + 1)
         .filter((id) => ratingFor(id, nextRatings) === reviewFilter);
       if (remaining.length) {
+        prepareRetry(remaining[0], nextRatings);
         setSequence(remaining);
         setIndex(0);
         setFlipped(false);
@@ -498,21 +556,10 @@ export function Flashcards({
         allQuestions.map((card) => card.id),
         nextRatings,
         allQuestions.filter(isAnswered).map((card) => card.id),
+        correctIds,
       );
       if (nextPending.length) {
-        const repeating = new Set(
-          nextPending.filter((id) => !hasLockedAnswer(questionById.get(id)!)),
-        );
-        setSelections((current) =>
-          Object.fromEntries(
-            Object.entries(current).filter(([id]) => !repeating.has(id)),
-          ),
-        );
-        setTypedAnswers((current) =>
-          Object.fromEntries(
-            Object.entries(current).filter(([id]) => !repeating.has(id)),
-          ),
-        );
+        clearReviewAnswers(nextPending);
         setReviewFilter("all");
         setSequence(nextPending);
         setIndex(0);
@@ -538,6 +585,7 @@ export function Flashcards({
       return;
     }
     setMotion(direction);
+    prepareRetry(sequence[next], nextRatings);
     setFlipped(false);
     setIndex(next);
   }
@@ -578,9 +626,12 @@ export function Flashcards({
           <Dialog.Description className="sr-only">
             Selected choices have a green border when correct and a red border
             when incorrect. Use Reveal answer to flip the card. Swipe left for
-            the next question and mark a completed answer SATISFIED, and right
-            to also advance and mark a completed answer BAD. Use Previous to go
-            back. Press Escape to exit.
+            the next question and mark a correct answer SATISFIED. Incorrect
+            answers stay BAD. Swipe right on an incorrect answer to advance and
+            mark it BAD. Correct answers cannot swipe right. Unsatisfied answers
+            clear when you return to retry. Finish by answering every question
+            correctly and choosing SATISFIED. Use Previous to go back. Press
+            Escape to exit.
           </Dialog.Description>
           <button className="text-link" onClick={onBack}>
             <ArrowLeft size={16} /> {backLabel}
@@ -788,7 +839,7 @@ export function Flashcards({
                         ? `Answer required before finishing. ${unanswered.length} question${unanswered.length === 1 ? "" : "s"} still unanswered; you can skip and return.`
                         : showRequired && ratings[question.id] !== "satisfied"
                           ? "Choose SATISFIED when you are satisfied with your answer. You can skip and review again after this pass."
-                          : "Answer and choose SATISFIED to finish. You can skip and return after this pass."}
+                          : "Answer correctly and choose SATISFIED to finish. You can skip and return after this pass."}
                     </span>
                     {!["multiple", "boolean"].includes(question.type) && (
                       <label className="flashcard-typed-answer">
@@ -803,12 +854,29 @@ export function Flashcards({
                           spellCheck={false}
                           placeholder="Type your answer"
                           value={typedAnswers[question.id] || ""}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const answer = event.target.value;
                             setTypedAnswers((current) => ({
                               ...current,
-                              [question.id]: event.target.value,
-                            }))
-                          }
+                              [question.id]: answer,
+                            }));
+                            setRatings((current) =>
+                              current[question.id] === "satisfied"
+                                ? {
+                                    ...current,
+                                    [question.id]: !answer.trim()
+                                      ? "unrated"
+                                      : isStudyAnswerCorrect(
+                                            question,
+                                            [],
+                                            answer,
+                                          )
+                                        ? "satisfied"
+                                        : "bad",
+                                  }
+                                : current,
+                            );
+                          }}
                         />
                       </label>
                     )}

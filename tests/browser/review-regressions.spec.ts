@@ -246,23 +246,18 @@ test("existing duplicate choices score by identity after shuffle and resume", as
     page.getByRole("button", { name: "A. Same", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "SATISFIED", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Finish session", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Session complete", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", {name:"Finish session", exact:true})).toHaveCount(0);
+  await page.getByRole("button", {name:"Review remaining", exact:true}).click();
+  await expect(page.getByRole("button", {name:"A. Same", exact:true})).toHaveAttribute("aria-pressed", "false");
+  expect((await library(page)).studySessions || []).toHaveLength(0);
+  await finish(page, "C. Same");
   let data = await library(page);
-  expect(data.studyProgress["layout-0"].optionIndices.duplicate).toEqual([
-    1, 2, 0,
-  ]);
-  expect(data.studySessions[0].score).toBe(0);
-  await page.getByRole("button", { name: "Start again", exact: true }).click();
+  expect(data.studyProgress["layout-0"].optionIndices.duplicate).toEqual([1,2,0]);
+  expect(data.studySessions[0].score).toBe(10);
+  await page.getByRole("button", {name:"Start again", exact:true}).click();
   await finish(page, "C. Same");
   data = await library(page);
-  expect(data.studySessions.map((session: any) => session.score)).toEqual([
-    0, 10,
-  ]);
+  expect(data.studySessions.map((session: any) => session.score)).toEqual([10,10]);
 });
 
 test("completing flashcards updates popularity immediately and preserves usage across editing and reload", async ({

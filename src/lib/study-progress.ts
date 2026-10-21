@@ -2,12 +2,11 @@ import type { Quiz, History } from "./api";
 import type { ReviewRating } from "./review";
 import { withData } from "./offline";
 import {
-  matchesAnswer,
-  matchesSelectedOptions,
   optionIndices,
   reorderOptions,
   correctIndices,
   hasCompleteAnswer,
+  isStudyAnswerCorrect,
 } from "./questions";
 
 export type StudyProgress = {
@@ -147,7 +146,16 @@ export function validStudyProgress(
     )
       return false;
     const answered = hasCompleteAnswer(card, selected, p.typedAnswers[card.id]);
-    return !p.complete || (answered && p.ratings[card.id] === "satisfied");
+    if (!p.complete) return true;
+    const order = p.optionIndices?.[card.id] ?? optionIndices(card, options);
+    const displayed = ["multiple", "boolean"].includes(card.type)
+      ? reorderOptions(card, order)
+      : card;
+    return (
+      answered &&
+      p.ratings[card.id] === "satisfied" &&
+      isStudyAnswerCorrect(displayed, selected, p.typedAnswers[card.id])
+    );
   });
 }
 
@@ -160,14 +168,37 @@ export async function loadStudyProgress(quiz: Quiz) {
     const saved = data.studyProgress?.[quiz.id];
     // Editing questions or settings starts a fresh session with the updated deck.
     // Also accept the signature format used before pictures were supported.
-    const matches =
-      saved &&
-      (saved.signature === signature ||
-        saved.signature === legacy ||
-        saved.signature === JSON.stringify([quiz.questions, quiz.settings]));
+    const valid = (progress: StudyProgress | undefined) =>
+      progress &&
+      (progress.signature === signature ||
+        progress.signature === legacy ||
+        progress.signature ===
+          JSON.stringify([quiz.questions, quiz.settings])) &&
+      validStudyProgress(quiz, progress);
+    let recovery: StudyProgress | undefined;
+    try {
+      const text = sessionStorage.getItem(
+        `quizcraft-study-recovery:${quiz.id}`,
+      );
+      if (text) {
+        const candidate = JSON.parse(text);
+        if (valid(candidate)) recovery = candidate;
+        else sessionStorage.removeItem(`quizcraft-study-recovery:${quiz.id}`);
+      }
+    } catch {
+      /* IndexedDB remains the primary store when recovery is unavailable. */
+    }
+    // Completion is already committed before its UI is shown. An older pending
+    // snapshot from that same session must not reopen a completed session.
+    const completed =
+      valid(saved) &&
+      saved!.complete &&
+      saved!.sessionId === recovery?.sessionId;
     return {
       signature,
-      progress: matches && validStudyProgress(quiz, saved) ? saved : null,
+      progress: completed
+        ? saved!
+        : (recovery ?? (valid(saved) ? saved! : null)),
     };
   }, "readonly");
 }
@@ -181,7 +212,9 @@ export function recordStudyCompletion(quiz: Quiz, progress: StudyProgress) {
     !validStudyProgress(quiz, progress)
   )
     return Promise.reject(
-      new Error("Answer every card and choose SATISFIED before finishing."),
+      new Error(
+        "Answer every card correctly and choose SATISFIED before finishing.",
+      ),
     );
   const cards = quiz.questions || [];
   const correct = cards.filter((card) => {
@@ -189,12 +222,12 @@ export function recordStudyCompletion(quiz: Quiz, progress: StudyProgress) {
       const order =
         progress.optionIndices?.[card.id] ??
         optionIndices(card, progress.optionOrder[card.id]);
-      return matchesSelectedOptions(
+      return isStudyAnswerCorrect(
         reorderOptions(card, order),
         progress.selections[card.id] || [],
       );
     }
-    return matchesAnswer(card, progress.typedAnswers[card.id] || "");
+    return isStudyAnswerCorrect(card, [], progress.typedAnswers[card.id] || "");
   });
   const entry: History = {
     id: progress.sessionId,
@@ -223,9 +256,25 @@ export function recordStudyCompletion(quiz: Quiz, progress: StudyProgress) {
 }
 
 export function saveStudyProgress(quizId: string, progress: StudyProgress) {
+  const key = `quizcraft-study-recovery:${quizId}`;
+  let recovery: string | undefined;
+  try {
+    recovery = JSON.stringify(progress);
+    sessionStorage.setItem(key, recovery);
+  } catch {
+    /* Normal saves still work when recovery storage is unavailable. */
+  }
   return withData((data) => {
     if (!data.quizzes.some((quiz) => quiz.id === quizId)) return;
     data.studyProgress ??= {};
     data.studyProgress[quizId] = progress;
+  }).then(() => {
+    try {
+      // A previous commit cannot remove a newer pending answer or rating.
+      if (recovery && sessionStorage.getItem(key) === recovery)
+        sessionStorage.removeItem(key);
+    } catch {
+      /* Recovery storage may be disabled. */
+    }
   });
 }

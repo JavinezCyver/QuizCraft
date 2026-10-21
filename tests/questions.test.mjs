@@ -9,7 +9,20 @@ import {
   hasDuplicateOptions,
   allowsMultipleSelections,
   hasCompleteAnswer,
+  isStudyAnswerCorrect,
 } from "../src/lib/questions.ts";
+
+test("study correctness distinguishes completed errors, shuffled choices and self-assessed answers", () => {
+  const card = {type:"multiple", options:["Mars", "Moon", "Earth"], accepted:["Mars", "Earth"], correctOptions:[0,2]};
+  assert.equal(isStudyAnswerCorrect(card, [0]), false);
+  assert.equal(isStudyAnswerCorrect(card, [0,1]), false);
+  assert.equal(isStudyAnswerCorrect(card, [0,2]), true);
+  assert.equal(isStudyAnswerCorrect(reorderOptions(card,[2,0,1]), [0,1]), true);
+  assert.equal(isStudyAnswerCorrect({...card,type:"blank",accepted:["Sun"]}, [], "Moon"), false);
+  assert.equal(isStudyAnswerCorrect({...card,type:"blank",accepted:["Sun"]}, [], " SUN "), true);
+  assert.equal(isStudyAnswerCorrect({...card,type:"short",accepted:[]}, [], "My own response"), true);
+  assert.equal(isStudyAnswerCorrect({...card,type:"short",accepted:[]}, [], "  "), false);
+});
 
 test("study completion requires every required choice and a nonempty typed answer", () => {
   const card = { type: "multiple", options: ["Mars", "Moon", "Earth"], accepted: ["Mars", "Earth"], correctOptions: [0, 2] };

@@ -1,4 +1,9 @@
-import { prepareQuiz, withData, type OfflineData } from "./offline";
+import {
+  prepareQuiz,
+  assertQuizReady,
+  withData,
+  type OfflineData,
+} from "./offline";
 import type { Quiz, History } from "./api";
 import {
   studySignature,
@@ -35,6 +40,9 @@ export async function importQuizzes(text: string) {
   if (!Array.isArray(values) || !values.length)
     throw new Error("This file does not contain quizzes.");
   const quizzes = values.map(prepareQuiz);
+  quizzes.forEach((quiz) => {
+    if (quiz.status === "published") assertQuizReady(quiz);
+  });
   await withData((data) => {
     data.quizzes.push(...quizzes);
   });
@@ -61,6 +69,7 @@ export async function restoreBackup(text: string) {
       throw new Error("Invalid quiz identifiers in backup.");
     ids.add(q.id);
     const quiz = { ...prepareQuiz(q), id: q.id };
+    if (quiz.status === "published") assertQuizReady(quiz);
     if (typeof q.created === "string" && Number.isFinite(Date.parse(q.created)))
       quiz.created = q.created;
     if (Number.isSafeInteger(q.plays) && q.plays! >= 0) quiz.plays = q.plays;
@@ -206,4 +215,17 @@ export async function restoreBackup(text: string) {
     data.studySessions = studySessions;
     data.user.name = payload.user.name.slice(0, 80) || "Curious learner";
   });
+  // An explicit restore replaces local drafts too. Never replay pre-restore
+  // recovery edits over the collection the user just chose to restore.
+  try {
+    Object.keys(sessionStorage)
+      .filter(
+        (key) =>
+          key.startsWith("quizcraft-draft-recovery:") ||
+          key.startsWith("quizcraft-study-recovery:"),
+      )
+      .forEach((key) => sessionStorage.removeItem(key));
+  } catch {
+    /* Recovery storage may be disabled. */
+  }
 }

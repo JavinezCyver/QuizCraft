@@ -2,6 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pendingReviewIds } from "../src/lib/review.ts";
 
+test("an incorrect answer cannot finish even with a SATISFIED rating", () => {
+  assert.deepEqual(pendingReviewIds(["a", "b"], {a:"satisfied", b:"satisfied"}, ["a","b"], ["b"]), ["a"]);
+});
+
 test("the next pass contains BAD, GOOD and unrated cards once, in deck order", () => {
   assert.deepEqual(
     pendingReviewIds(
