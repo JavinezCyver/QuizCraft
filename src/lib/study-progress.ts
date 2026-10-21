@@ -7,6 +7,7 @@ import {
   optionIndices,
   reorderOptions,
   correctIndices,
+  hasCompleteAnswer,
 } from "./questions";
 
 export type StudyProgress = {
@@ -89,7 +90,7 @@ export function validStudyProgress(
     !Number.isInteger(p.index) ||
     p.index < 0 ||
     p.index >= Math.max(1, p.sequence.length) ||
-    !["all", "bad", "good", "satisfied"].includes(p.reviewFilter) ||
+    !["all", "unrated", "bad", "good", "satisfied"].includes(p.reviewFilter) ||
     typeof p.complete !== "boolean" ||
     typeof p.showRequired !== "boolean" ||
     !(p.deadline === null || Number.isFinite(p.deadline)) ||
@@ -98,7 +99,7 @@ export function validStudyProgress(
     (p.started !== undefined && !Number.isFinite(p.started)) ||
     !validKeys(p.ratings) ||
     !Object.values(p.ratings).every((rating) =>
-      ["bad", "good", "satisfied"].includes(rating),
+      ["unrated", "bad", "good", "satisfied"].includes(rating),
     ) ||
     !validKeys(p.typedAnswers) ||
     !Object.values(p.typedAnswers).every(
@@ -145,9 +146,7 @@ export function validStudyProgress(
       (card.type === "boolean" && selected.length > 1)
     )
       return false;
-    const answered = ["multiple", "boolean"].includes(card.type)
-      ? selected.length > 0
-      : !!p.typedAnswers[card.id]?.trim();
+    const answered = hasCompleteAnswer(card, selected, p.typedAnswers[card.id]);
     return !p.complete || (answered && p.ratings[card.id] === "satisfied");
   });
 }
@@ -170,7 +169,7 @@ export async function loadStudyProgress(quiz: Quiz) {
       signature,
       progress: matches && validStudyProgress(quiz, saved) ? saved : null,
     };
-  });
+  }, "readonly");
 }
 
 export function recordStudyCompletion(quiz: Quiz, progress: StudyProgress) {

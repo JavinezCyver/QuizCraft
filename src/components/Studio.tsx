@@ -20,6 +20,9 @@ import { correctIndices } from "../lib/questions";
 import { QuestionEditor } from "./QuestionEditor";
 import { readCoverImage } from "../lib/cover";
 import { CardImageUpload } from "./CardImageUpload";
+import { AutoSizeTextarea } from "./AutoSizeTextarea";
+import { MAX_QUIZ_QUESTIONS } from "../lib/offline";
+import { mergeQuizEdits } from "../lib/quiz-edit";
 const fresh = (): Question => ({
   id: crypto.randomUUID(),
   type: "blank",
@@ -34,12 +37,14 @@ export function Studio({
   onBack,
   onPublished,
   onPreview,
+  onSaved,
   notify,
 }: {
   id: string;
   onBack: () => void;
   onPublished: (quiz: Quiz) => Promise<void>;
   onPreview: (q: Quiz) => void;
+  onSaved: () => void;
   notify: (s: string) => void;
 }) {
   const [quiz, setQuiz] = useState<Quiz | null>(null),
@@ -70,35 +75,67 @@ export function Studio({
     [id],
   );
   const version = useRef(0),
-    initial = useRef(true),
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     saveQueue = useRef<Promise<unknown>>(Promise.resolve()),
     latestQuiz = useRef<Quiz | null>(null),
+    baseQuiz = useRef<Quiz | null>(null),
+    mounted = useRef(true),
     dirty = useRef(false);
   latestQuiz.current = quiz;
-  useEffect(
-    () => () => {
-      if (dirty.current && latestQuiz.current) {
+  function queueSave(status: Quiz["status"] = "draft") {
+    const pending = saveQueue.current
+      .catch(() => {})
+      .then(async () => {
         const draft = latestQuiz.current;
-        saveQueue.current = saveQueue.current
-          .catch(() => {})
-          .then(() =>
-            api("/quizzes/" + id, "PUT", { ...draft, status: "draft" }),
-          )
-          .catch((e) => notify("Draft could not be saved: " + e.message));
-      }
-    },
-    [id],
-  );
+        if (!draft || !baseQuiz.current)
+          throw new Error("The quiz is still loading.");
+        const current = version.current;
+        const saved = await api<Quiz>("/quizzes/" + id, "PUT", {
+          ...draft,
+          status,
+          baseQuiz: baseQuiz.current,
+        });
+        // Retain typing that happened during this save, while adopting changes
+        // merged from another tab before the next save starts.
+        const next = mergeQuizEdits(
+          saved,
+          latestQuiz.current || draft,
+          draft,
+          true,
+        );
+        baseQuiz.current = saved;
+        latestQuiz.current = next;
+        if (current === version.current) dirty.current = false;
+        if (mounted.current) setQuiz(next);
+        onSaved();
+        return saved;
+      });
+    saveQueue.current = pending;
+    return pending;
+  }
   useEffect(() => {
-    initial.current = true;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (dirty.current && latestQuiz.current) {
+        void queueSave().catch((e) =>
+          notify("Draft could not be saved: " + e.message),
+        );
+      }
+    };
+  }, [id]);
+  useEffect(() => {
+    let canceled = false;
     api<Library>("/library")
-      .then((library) =>
-        setKnownCategories(library.quizzes.map((quiz) => quiz.category)),
-      )
+      .then((library) => {
+        if (!canceled)
+          setKnownCategories(library.quizzes.map((quiz) => quiz.category));
+      })
       .catch(() => {});
     api<Quiz>("/quizzes/" + id)
       .then((q) => {
+        if (canceled) return;
+        baseQuiz.current = q;
         setQuiz({
           ...q,
           questions: q.questions?.map((question) =>
@@ -109,25 +146,23 @@ export function Studio({
         });
         setSaving("All changes saved");
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (!canceled) setError(e.message);
+      });
+    return () => {
+      canceled = true;
+    };
   }, [id]);
   useEffect(() => {
-    if (!quiz) return;
-    if (initial.current) {
-      initial.current = false;
-      return;
-    }
-    const current = ++version.current;
+    if (!quiz || !dirty.current) return;
+    const current = version.current;
     setSaving("Unsaved changes");
     const timer = setTimeout(() => {
       setSaving("Saving…");
-      saveQueue.current = saveQueue.current
-        .catch(() => {})
-        .then(() => api("/quizzes/" + id, "PUT", { ...quiz, status: "draft" }))
+      void queueSave()
         .then(() => {
           if (current === version.current) {
             setSaving("Draft saved");
-            dirty.current = false;
           }
         })
         .catch((e) => {
@@ -138,9 +173,21 @@ export function Studio({
     saveTimer.current = timer;
     return () => clearTimeout(timer);
   }, [quiz, id]);
-  const change = (patch: Partial<Quiz>) => {
+  const change = (
+    patch: Partial<Quiz> | ((current: Quiz) => Partial<Quiz>),
+  ) => {
+    const current = latestQuiz.current;
+    if (!current) return;
+    version.current++;
     dirty.current = true;
-    setQuiz((q) => (q ? { ...q, ...patch } : q));
+    const next = {
+      ...current,
+      ...(typeof patch === "function" ? patch(current) : patch),
+    };
+    // Update the save source in this event, before React's next render. A save
+    // response arriving in the same frame must merge against these edits.
+    latestQuiz.current = next;
+    setQuiz(next);
   };
   const list = quiz?.questions || [];
   const categoryOptions = Array.from(
@@ -171,18 +218,19 @@ export function Studio({
       // Flush pending edits first so an older autosave cannot restore the label.
       if (saveTimer.current) clearTimeout(saveTimer.current);
       await saveQueue.current;
-      if (dirty.current)
-        await api("/quizzes/" + id, "PUT", { ...quiz, status: "draft" });
+      if (dirty.current) await queueSave();
       await api("/categories", "DELETE", { name: quiz.category });
       setKnownCategories((values) =>
         values.filter((value) => value !== quiz.category),
       );
-      initial.current = true;
       dirty.current = false;
+      if (baseQuiz.current)
+        baseQuiz.current = { ...baseQuiz.current, category: "Uncategorized" };
       setQuiz((current) =>
         current ? { ...current, category: "Uncategorized" } : current,
       );
       setSaving("All changes saved");
+      onSaved();
       setDeleteCategoryOpen(false);
       notify("Category deleted. Your quizzes are now Uncategorized.");
     } catch (error) {
@@ -212,9 +260,11 @@ export function Studio({
     );
   }
   const update = (patch: Partial<Question>) =>
-    change({
-      questions: list.map((q, i) => (i === selected ? { ...q, ...patch } : q)),
-    });
+    change((current) => ({
+      questions: current.questions?.map((q) =>
+        q.id === question?.id ? { ...q, ...patch } : q,
+      ),
+    }));
   async function save(publish = false, preview = false) {
     if (!quiz) return;
     if (imagesBusy) {
@@ -223,24 +273,22 @@ export function Studio({
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     try {
-      await saveQueue.current;
-      await api("/quizzes/" + id, "PUT", {
-        ...quiz,
-        status: publish ? "published" : "draft",
-        visibility: quiz.visibility,
-      });
+      let saved: Quiz;
+      do {
+        saved = await queueSave(publish ? "published" : "draft");
+      } while (dirty.current);
       setSaving(publish ? "Published" : "Draft saved");
       setError("");
       dirty.current = false;
       if (publish) {
         notify(
-          quiz.visibility === "public"
+          saved.visibility === "public"
             ? "Quiz published to Discover on this device."
             : "Quiz ready in My quizzes.",
         );
-        await onPublished(quiz);
+        await onPublished(saved);
       }
-      if (preview) onPreview({ ...quiz, preview: true });
+      if (preview) onPreview({ ...saved, preview: true });
       else if (!publish) {
         notify("Draft saved.");
         onBack();
@@ -257,6 +305,10 @@ export function Studio({
   }
   function addQuestion() {
     if (imagesBusy) return;
+    if (list.length >= MAX_QUIZ_QUESTIONS) {
+      setError(`A quiz can contain up to ${MAX_QUIZ_QUESTIONS} questions.`);
+      return;
+    }
     change({ questions: [...list, fresh()] });
     setSelected(list.length);
     requestAnimationFrame(() => {
@@ -491,7 +543,11 @@ export function Studio({
                   </button>
                 )}
               </label>
-              <div className="theme-field" role="group" aria-label="Color theme">
+              <div
+                className="theme-field"
+                role="group"
+                aria-label="Color theme"
+              >
                 <span>Color theme</span>
                 <div className="theme-options">
                   {[
@@ -546,7 +602,7 @@ export function Studio({
                     <button
                       className="icon-btn"
                       aria-label="Add blank question"
-                      disabled={imagesBusy}
+                      disabled={imagesBusy || list.length >= MAX_QUIZ_QUESTIONS}
                       title="Add blank question"
                       onClick={addQuestion}
                     >
@@ -605,8 +661,8 @@ export function Studio({
                   onChange={(questionImage) => update({ questionImage })}
                 />
                 {["multiple", "boolean"].includes(question.type) ? (
-                  <div>
-                    <label>
+                  <div className="answer-options-editor">
+                    <label className="answer-options-heading">
                       Answer options{" "}
                       <span className="muted">
                         {question.type === "multiple"
@@ -619,7 +675,10 @@ export function Studio({
                       control beside each correct answer.
                     </p>
                     {question.options.map((option, i) => (
-                      <div className="option-edit" key={i}>
+                      <div
+                        className={`option-edit${question.type === "boolean" ? " is-boolean" : ""}`}
+                        key={i}
+                      >
                         <label className="correct-option-toggle">
                           <input
                             type={
@@ -643,8 +702,9 @@ export function Studio({
                             }
                           />
                         </label>
-                        <input
+                        <AutoSizeTextarea
                           aria-label={`Option ${i + 1}`}
+                          rows={1}
                           value={option}
                           readOnly={question.type === "boolean"}
                           placeholder={`Enter answer option ${String.fromCharCode(65 + i)}`}
@@ -718,7 +778,8 @@ export function Studio({
                 {question.type !== "blank" && (
                   <label className="answer-explanation-field">
                     Answer explanation (optional)
-                    <textarea
+                    <AutoSizeTextarea
+                      rows={3}
                       value={question.explanation}
                       onChange={(e) => update({ explanation: e.target.value })}
                       placeholder="Help learners understand the answer."
@@ -730,11 +791,17 @@ export function Studio({
                   variant="outline"
                   size="sm"
                   className="new-question-button"
-                  disabled={imagesBusy}
+                  disabled={imagesBusy || list.length >= MAX_QUIZ_QUESTIONS}
                   onClick={addQuestion}
                 >
                   <Plus size={16} /> New Question
                 </Button>
+                {list.length >= MAX_QUIZ_QUESTIONS && (
+                  <p className="question-limit-note" role="status">
+                    This quiz has {MAX_QUIZ_QUESTIONS} questions. Create another
+                    quiz to add more cards.
+                  </p>
+                )}
               </section>
             ) : (
               <div className="empty-state panel">

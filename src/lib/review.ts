@@ -1,4 +1,4 @@
-export type ReviewRating = "bad" | "good" | "satisfied";
+export type ReviewRating = "unrated" | "bad" | "good" | "satisfied";
 
 // Build the next pass only after the current pass has ended.
 export function pendingReviewIds(

@@ -238,6 +238,9 @@ test("existing duplicate choices score by identity after shuffle and resume", as
     .getByRole("button", { name: "Layout quiz 1", exact: true })
     .click();
   await page.getByRole("button", { name: "A. Same", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "A. Same", exact: true }),
+  ).toHaveAttribute("data-answer-state", "incorrect");
   await page.reload();
   await expect(
     page.getByRole("button", { name: "A. Same", exact: true }),
@@ -301,7 +304,7 @@ for (const [width, height] of [
   [320, 568],
   [568, 320],
 ]) {
-  test(`long picture cards remain readable and can be paged without scrolling at ${width}x${height}`, async ({
+  test(`long picture cards remain readable by scrolling within one card at ${width}x${height}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height });
@@ -336,11 +339,8 @@ for (const [width, height] of [
       .getByRole("button", { name: "Layout quiz 1", exact: true })
       .click();
     const face = page.locator('.flashcard-front[aria-hidden="false"]');
-    const pager = page.getByRole("button", {
-      name: "Next card content",
-      exact: true,
-    });
-    await expect(pager).toBeVisible();
+    const scroller = face.locator(".flashcard-face-viewport");
+    await expect(page.getByRole("group", { name: "Card content pages", exact: true })).toHaveCount(0);
     await page.screenshot({
       path: `test-results/readable-picture-front-${width}x${height}.png`,
     });
@@ -393,11 +393,27 @@ for (const [width, height] of [
       totalLines = visible.totalLines;
       visible.lines.forEach((index) => linesSeen.add(index));
       questionEndSeen ||= visible.lastVisible;
-      if (await pager.isDisabled()) break;
-      await pager.click();
+      const moved = await scroller.evaluate((element) => {
+        const before = element.scrollTop;
+        element.scrollTop += Math.max(1, element.clientHeight / 2);
+        return element.scrollTop > before;
+      });
+      if (!moved) break;
     }
     expect(questionEndSeen).toBe(true);
     expect(linesSeen.size).toBe(totalLines);
+    // A native scroller has continuous positions, rather than fixed page stops.
+    // Check each control at its own scroll position as a user can do.
+    for (const [index, option] of (await face.locator(".flashcard-option").all()).entries()) {
+      await option.scrollIntoViewIfNeeded();
+      const visible = await option.evaluate((element) => {
+        const viewport = element.closest(".flashcard-face-viewport")!.getBoundingClientRect();
+        const box = element.getBoundingClientRect();
+        return box.top >= viewport.top - 1 && box.bottom <= viewport.bottom + 1;
+      });
+      expect(visible).toBe(true);
+      optionsSeen.add(index);
+    }
     expect([...optionsSeen].sort()).toEqual([0, 1, 2, 3]);
     await face
       .getByRole("button", { name: "Reveal answer", exact: true })

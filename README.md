@@ -8,17 +8,17 @@ Download the signed Android APK from [GitHub Releases](https://github.com/Javine
 
 - Start with a clean, empty library. No demo quizzes, questions, answers, or creator data are bundled.
 - Create and edit flashcard collections, autosave drafts, manage categories, and delete collections.
-- Add multiple choice questions with multiple correct answers, true or false questions, and fill in the blank questions.
+- Add up to 500 questions per quiz: multiple choice with multiple correct answers, true or false, and fill in the blank.
 - Format question text with bold or italic, and attach pictures to questions and answers.
-- Select choices or type an answer, then use Reveal answer to compare it with the accepted answer. Matching words are highlighted in both typed and accepted answers.
-- Rate cards BAD, GOOD, or SATISFIED. Cards needing review return after each pass; finishing requires an answer and SATISFIED on every card.
+- Multiple choice and true or false answers use green borders for correct choices and red borders for incorrect choices. A correct response shows only its green choices and a brief confetti celebration, respecting reduced-motion preferences. An incorrect completed response reveals every choice's border and briefly shakes the choices, respecting reduced-motion preferences. Emoji feedback shows Perfect, Almost, or Not quite in reserved space so it does not move the question or choices. Cards flip only when you choose Reveal answer. Matching words are highlighted in both typed and accepted answers.
+- Rate cards UNRATED, BAD, GOOD, or SATISFIED. Both swipe directions advance: swipe left to mark a completed answer SATISFIED, or right to mark it BAD. Use the Previous button to go back. Skipping an unanswered or incomplete card assigns UNRATED; the UNRATED filter also includes cards without a saved rating. Cards needing review return after each pass with their previous answers and feedback cleared, except completed choice responses, which stay locked until the refresh / Start again button is used. Finishing requires an answer and SATISFIED on every card.
 - Resume saved study progress, filter cards by rating, and review completed session scores.
 - Save bookmarks, quiz history, a display name, and appearance on the device.
 - Import quiz files and back up/restore the collection, study progress, and completed history in Settings.
 
 Settings > App updates optionally checks for new versions and shows release notes. The Android app downloads and verifies updates, then opens the system installer. Update checks and downloads need internet.
 
-Data lives in the app's IndexedDB database, `quizcraft-offline`. Each update uses a transaction, so simultaneous browser tabs cannot overwrite each other's changes. Quizzes and results are specific to the device/browser; they are not sent to a server or automatically synchronized. Removing the app or clearing site storage removes local data. Use Settings > Export backup to keep a copy.
+Data lives in the app's IndexedDB database, `quizcraft-offline`. Each update uses a transaction. Separate quiz fields edited in different tabs are merged; conflicting changes to the same field are reported instead of overwriting saved data. Quizzes and results are specific to the device/browser; they are not sent to a server or automatically synchronized. Removing the app or clearing site storage removes local data. Use Settings > Export backup to keep a copy.
 
 New installations initialize an empty library. Quizzes created on a developer's computer or another person's device are never copied into builds. The original `data/quizcraft.sqlite` database is left intact and is not packaged. Updating an existing installation preserves that device's local quizzes; it does not import content from the developer's device. Android automatic cloud backup/restore and device-transfer backup are disabled. Only a deliberate quiz import or backup restore transfers quiz data.
 
@@ -105,3 +105,5 @@ npm test
 ```
 
 Builds the production app and tests offline startup/refresh, persistence, editing, scoring, backup restore, imports, flashcards, and responsive layouts. The active Playwright suite targets the offline app. The old authentication/server browser scenarios remain as references and are not part of the offline suite. `npm run test:legacy` runs the retained Rust and HTTP API tests separately.
+
+See the [21 October 2026 application review](docs/application-review-2026-10-21.md) for the flashcard changes, reproduced bugs and fixes, optimization measurements, and verification scope.

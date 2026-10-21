@@ -509,11 +509,8 @@ test("mixed flashcard deck saves multiple correct choices and previews every typ
   await earth.tap();
   await expect(earth).toHaveAttribute("aria-pressed", "true");
   await expect(mars).toHaveAttribute("aria-pressed", "true");
-  await mars.tap();
-  await expect(mars).toHaveAttribute("aria-pressed", "false");
-  await mars.focus();
-  await page.keyboard.press("Space");
-  await expect(mars).toHaveAttribute("aria-pressed", "true");
+  await expect(mars).toBeDisabled();
+  await expect(front).toBeVisible();
   await front.getByRole("button", { name: "Reveal answer", exact: true }).tap();
   await expect(back).toContainText("Mars, Earth");
   await back.getByRole("button", { name: "Show question", exact: true }).tap();
@@ -530,9 +527,9 @@ test("mixed flashcard deck saves multiple correct choices and previews every typ
     exact: true,
   });
   await trueChoice.tap();
-  await falseChoice.tap();
-  await expect(falseChoice).toHaveAttribute("aria-pressed", "true");
-  await expect(trueChoice).toHaveAttribute("aria-pressed", "false");
+  await expect(falseChoice).toBeDisabled();
+  await expect(falseChoice).toHaveAttribute("aria-pressed", "false");
+  await expect(trueChoice).toHaveAttribute("aria-pressed", "true");
   await front.getByRole("button", { name: "Reveal answer", exact: true }).tap();
   await expect(back).toContainText("True");
   await page.getByRole("button", { name: "Next card", exact: true }).click();
@@ -624,11 +621,12 @@ test("multiple choice automatically uses single or multiple selection from the m
   const kakashi = page.getByRole("button", { name: "B. kakashi", exact: true });
   const naruto = page.getByRole("button", { name: "C. naruto", exact: true });
   await sasuke.tap();
+  await expect(sasuke).toBeDisabled();
+  await page.getByRole("button", { name: "Start again", exact: true }).tap();
   await kakashi.tap();
   await expect(sasuke).toHaveAttribute("aria-pressed", "false");
   await expect(kakashi).toHaveAttribute("aria-pressed", "true");
-  await kakashi.tap();
-  await expect(kakashi).toHaveAttribute("aria-pressed", "true");
+  await expect(kakashi).toBeDisabled();
   await page.getByRole("button", { name: "Reveal answer", exact: true }).tap();
   await expect(
     page.locator('.flashcard-back[aria-hidden="false"] .flashcard-text'),
@@ -643,8 +641,8 @@ test("multiple choice automatically uses single or multiple selection from the m
   await naruto.tap();
   await expect(sasuke).toHaveAttribute("aria-pressed", "true");
   await expect(naruto).toHaveAttribute("aria-pressed", "true");
-  await sasuke.tap();
-  await expect(sasuke).toHaveAttribute("aria-pressed", "false");
+  await expect(sasuke).toBeDisabled();
+  await expect(sasuke).toHaveAttribute("aria-pressed", "true");
   await expect(naruto).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Reveal answer", exact: true }).tap();
   await expect(

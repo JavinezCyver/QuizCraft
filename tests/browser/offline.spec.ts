@@ -111,6 +111,205 @@ async function readData(page: Page) {
     });
   });
 }
+test("skipped questions become UNRATED and the new rating and filter survive reload", async ({ page }) => {
+  await readyOffline(page);
+  await importFixture(page, { ...fixture, questions: fixture.questions.slice(0, 2) });
+  await page.getByRole("button", { name: fixture.title, exact: true }).click();
+  await expect(page.getByRole("button", { name: "UNRATED", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Next card", exact: true }).click();
+  await expect(page.getByRole("img", { name: "Card 1: unrated", exact: true }))
+    .toHaveCSS("background-color", "rgb(244, 214, 217)");
+  await page.getByRole("button", { name: "A. True", exact: true }).click();
+  await page.getByRole("button", { name: "BAD", exact: true }).click();
+  await page.getByRole("button", { name: "UNRATED", exact: true }).click();
+  await page.getByRole("combobox", { name: "Flashcard rating filter" }).click();
+  await page.getByRole("option").filter({ hasText: "UNRATED" }).click();
+  await expect(page.locator('.flashcard-front[aria-hidden="false"] .flashcard-text'))
+    .toHaveText("Pick the planet");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Flashcard rating filter" })).toContainText("UNRATED");
+  await expect(page.getByRole("button", { name: "UNRATED", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "A. Mars", exact: true }).click();
+  await swipeStudyCard(page, 1);
+  await expect(page.locator('.flashcard-front[aria-hidden="false"] .flashcard-text'))
+    .toHaveText("Water is a liquid");
+  await swipeStudyCard(page, 1);
+  await expect(page.getByRole("heading", { name: "Session complete", exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Flashcard rating filter" }).click();
+  await page.getByRole("option").filter({ hasText: "UNRATED" }).click();
+  await expect(page.getByRole("heading", { name: "No unrated cards yet", exact: true })).toBeVisible();
+});
+
+test("returning review cards clear previous answers and feedback, including after reload", async ({ page }) => {
+  await readyOffline(page);
+  await importFixture(page, { ...fixture, questions: [
+    { ...fixture.questions[0], accepted: ["Mars", "Moon"] },
+    ...fixture.questions.slice(1, 3),
+  ] });
+  await page.getByRole("button", { name: fixture.title, exact: true }).click();
+  const front = page.locator('.flashcard-front[aria-hidden="false"]');
+  await front.getByRole("button", { name: "A. Mars", exact: true }).click();
+  await page.getByRole("button", { name: "BAD", exact: true }).click();
+  await page.getByRole("button", { name: "Next card", exact: true }).click();
+  await front.getByRole("button", { name: "A. True", exact: true }).click();
+  await page.getByRole("button", { name: "GOOD", exact: true }).click();
+  await page.getByRole("button", { name: "Next card", exact: true }).click();
+  await front.getByRole("textbox", { name: "Your answer" }).fill("Sun");
+  await page.getByRole("button", { name: "BAD", exact: true }).click();
+  await page.getByRole("button", { name: "Review unanswered", exact: true }).click();
+  await expect(front).toContainText("Pick the planet");
+  await expect(front.locator('.flashcard-option[aria-pressed="true"]')).toHaveCount(0);
+  await expect(front.locator('.flashcard-option[data-answer-state]')).toHaveCount(0);
+  await expect(front.locator(".flashcard-choice-feedback")).toBeEmpty();
+  await expect(front.getByRole("alert")).toHaveCount(0);
+  await expect.poll(async () => Object.values((await readData(page)).studyProgress)
+    .map((progress: any) => ({ selections: Object.values(progress.selections), typedAnswers: progress.typedAnswers })))
+    .toEqual([{ selections: [[0]], typedAnswers: {} }]);
+  await page.reload();
+  await expect(front).toContainText("Pick the planet");
+  await expect(front.locator('.flashcard-option[aria-pressed="true"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "Next card", exact: true }).click();
+  await expect(front).toContainText("Water is a liquid");
+  await expect(front.locator('.flashcard-option:disabled')).toHaveCount(2);
+  await page.getByRole("button", { name: "Next card", exact: true }).click();
+  await expect(front.getByRole("textbox", { name: "Your answer" })).toHaveValue("");
+});
+
+async function swipeStudyCard(page: Page, direction: number) {
+  await page.locator(".flashcard").evaluate(async (card) => {
+    await Promise.all(card.getAnimations({ subtree: true }).map((animation) =>
+      animation.finished.catch(() => {}),
+    ));
+  });
+  const card = (await page.locator(".flashcard").boundingBox())!;
+  const text = (await page.locator('.flashcard-face[aria-hidden="false"] .flashcard-text').boundingBox())!;
+  const start = card.x + card.width * (direction > 0 ? 0.8 : 0.2);
+  const end = card.x + card.width * (direction > 0 ? 0.2 : 0.8);
+  const y = text.y + text.height / 2;
+  await page.mouse.move(start, y);
+  await page.mouse.down();
+  await page.mouse.move(end, y, { steps: 8 });
+  await page.mouse.up();
+}
+
+test("forward swipes satisfy completed answers and save the final rating with completion", async ({ page }) => {
+  await readyOffline(page);
+  await importFixture(page, { ...fixture, questions: fixture.questions.slice(0, 3) });
+  await page.getByRole("button", { name: fixture.title, exact: true }).click();
+  await page.getByRole("button", { name: "A. Mars", exact: true }).click();
+  await swipeStudyCard(page, 1);
+  await expect(page.getByRole("img", { name: "Card 1: satisfied", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(page.getByRole("button", { name: "SATISFIED", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await swipeStudyCard(page, 1);
+  await page.getByRole("button", { name: "B. False", exact: true }).click();
+  await swipeStudyCard(page, 1);
+  await expect(page.getByRole("img", { name: "Card 2: satisfied", exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Your answer", exact: true }).fill("Sun");
+  await swipeStudyCard(page, 1);
+  await expect(page.getByRole("heading", { name: "Session complete", exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const data = await readData(page);
+    return Object.values(data.studyProgress).map((progress: any) => ({
+      complete: progress.complete, ratings: Object.values(progress.ratings),
+    }));
+  }).toEqual([{ complete: true, ratings: ["satisfied", "satisfied", "satisfied"] }]);
+  expect((await readData(page)).studySessions).toHaveLength(1);
+});
+
+test("swipes leave unanswered and incomplete choices unmarked and next buttons do not auto-rate", async ({ page }) => {
+  await readyOffline(page);
+  await importFixture(page, {
+    ...fixture,
+    questions: [{ ...fixture.questions[0], options: ["Mars", "Moon", "Earth"], accepted: ["Mars", "Earth"] }, fixture.questions[1]],
+  });
+  await page.getByRole("button", { name: fixture.title, exact: true }).click();
+  await expect(page.getByRole("button", { name: "A. Mars", exact: true })).toBeVisible();
+  await swipeStudyCard(page, 1);
+  await expect(page.getByRole("img", { name: "Card 1: unrated", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await page.getByRole("button", { name: "A. Mars", exact: true }).click();
+  await swipeStudyCard(page, 1);
+  await expect(page.getByRole("img", { name: "Card 1: unrated", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await page.getByRole("button", { name: "C. Earth", exact: true }).click();
+  await page.getByRole("button", { name: "Next card", exact: true }).click();
+  await expect(page.getByRole("img", { name: "Card 1: unrated", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "A. True", exact: true }).click();
+  await swipeStudyCard(page, -1);
+  await expect(page.getByRole("img", { name: "Card 2: bad", exact: true })).toBeVisible();
+  await swipeStudyCard(page, 1);
+  await expect(page.getByRole("img", { name: "Card 1: satisfied", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("img", { name: "Card 1: satisfied", exact: true })).toBeVisible();
+});
+
+test("forward swipes satisfy and advance through a filtered review without skipping cards", async ({ page }) => {
+  await readyOffline(page);
+  await importFixture(page, { ...fixture, questions: fixture.questions.slice(0, 2) });
+  await page.getByRole("button", { name: fixture.title, exact: true }).click();
+  await page.getByRole("button", { name: "A. Mars", exact: true }).click();
+  await page.getByRole("button", { name: "GOOD", exact: true }).click();
+  await page.getByRole("button", { name: "Next card", exact: true }).click();
+  await page.getByRole("button", { name: "A. True", exact: true }).click();
+  await page.getByRole("button", { name: "GOOD", exact: true }).click();
+  await page.getByRole("combobox", { name: "Flashcard rating filter" }).click();
+  await page.getByRole("option").filter({ hasText: "GOOD" }).click();
+  await expect(page.locator('.flashcard-front[aria-hidden="false"] .flashcard-text')).toHaveText("Pick the planet");
+  await swipeStudyCard(page, 1);
+  await expect(page.locator('.flashcard-front[aria-hidden="false"] .flashcard-text')).toHaveText("Water is a liquid");
+  await swipeStudyCard(page, 1);
+  await expect(page.getByRole("heading", { name: "Session complete", exact: true })).toBeVisible();
+  await expect.poll(async () => Object.values((await readData(page)).studyProgress)
+    .map((progress: any) => Object.values(progress.ratings)))
+    .toEqual([["satisfied", "satisfied"]]);
+});
+
+test("right swipes mark completed answers BAD and advance while Previous alone goes back", async ({ page }) => {
+  await readyOffline(page);
+  await importFixture(page, { ...fixture, questions: fixture.questions.slice(0, 3) });
+  await page.getByRole("button", { name: fixture.title, exact: true }).click();
+  await page.getByRole("button", { name: "A. Mars", exact: true }).click();
+  await swipeStudyCard(page, -1);
+  await expect(page.locator('.flashcard-front[aria-hidden="false"] .flashcard-text')).toHaveText("Water is a liquid");
+  await expect(page.getByRole("img", { name: "Card 1: bad", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "A. True", exact: true }).click();
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(page.getByRole("img", { name: "Card 2: not rated", exact: true })).toBeVisible();
+  await swipeStudyCard(page, 1);
+  await swipeStudyCard(page, -1);
+  await expect(page.getByRole("img", { name: "Card 2: bad", exact: true })).toBeVisible();
+  await expect(page.locator('.flashcard-front[aria-hidden="false"] .flashcard-text')).toHaveText("Name our star");
+  await page.getByRole("textbox", { name: "Your answer", exact: true }).fill("Sun");
+  await swipeStudyCard(page, -1);
+  await expect(page.getByRole("button", { name: "BAD", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => Object.values((await readData(page)).studyProgress)
+    .map((progress: any) => Object.values(progress.ratings)))
+    .toEqual([["satisfied", "bad", "bad"]]);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "BAD", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("right swipes advance through a SATISFIED filter and keep BAD cards available for review", async ({ page }) => {
+  await readyOffline(page);
+  await importFixture(page, { ...fixture, questions: fixture.questions.slice(0, 2) });
+  await page.getByRole("button", { name: fixture.title, exact: true }).click();
+  await page.getByRole("button", { name: "A. Mars", exact: true }).click();
+  await page.getByRole("button", { name: "SATISFIED", exact: true }).click();
+  await page.getByRole("button", { name: "Next card", exact: true }).click();
+  await page.getByRole("button", { name: "A. True", exact: true }).click();
+  await page.getByRole("button", { name: "SATISFIED", exact: true }).click();
+  await page.getByRole("combobox", { name: "Flashcard rating filter" }).click();
+  await page.getByRole("option").filter({ hasText: "SATISFIED" }).click();
+  await swipeStudyCard(page, -1);
+  await expect(page.locator('.flashcard-front[aria-hidden="false"] .flashcard-text')).toHaveText("Water is a liquid");
+  await swipeStudyCard(page, -1);
+  await expect(page.getByRole("combobox", { name: "Flashcard rating filter" })).toHaveText("All cards");
+  await expect(page.getByRole("button", { name: "BAD", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "Session complete", exact: true })).toHaveCount(0);
+});
 test("restoring a backup preserves answers, emoji ratings, question IDs and the current card", async ({
   page,
 }) => {
@@ -1174,7 +1373,7 @@ test("ratings repeat only after the pass and finishing requires SATISFIED", asyn
     questions: fixture.questions.slice(0, 3),
   });
   await page.getByRole("button", { name: fixture.title, exact: true }).click();
-  await expect(page.locator(".flashcard .flashcard-rating")).toHaveCount(3);
+  await expect(page.locator(".flashcard .flashcard-rating")).toHaveCount(4);
   await expect(page.locator(".flashcard-ratings")).not.toContainText(
     /BAD|GOOD|SATISFIED/,
   );
@@ -1203,7 +1402,7 @@ test("ratings repeat only after the pass and finishing requires SATISFIED", asyn
   await page.getByRole("button", { name: "GOOD", exact: true }).click();
   await expect(
     page.getByRole("img", { name: "Card 1: good", exact: true }),
-  ).toHaveCSS("background-color", "rgb(34, 197, 94)");
+  ).toHaveCSS("background-color", "rgb(59, 130, 246)");
   await expect(
     page.getByRole("button", { name: "Finish session", exact: true }),
   ).toHaveCount(0);
@@ -1214,7 +1413,7 @@ test("ratings repeat only after the pass and finishing requires SATISFIED", asyn
   await page.getByRole("button", { name: "SATISFIED", exact: true }).click();
   await expect(
     page.getByRole("img", { name: "Card 1: satisfied", exact: true }),
-  ).toHaveCSS("background-color", "rgb(167, 139, 250)");
+  ).toHaveCSS("background-color", "rgb(34, 197, 94)");
   await page
     .getByRole("button", { name: "Finish session", exact: true })
     .click();
@@ -1263,10 +1462,9 @@ test("skipped answers return for completion and entered answers survive navigati
   await expect(finish).toHaveCount(0);
   await review.click();
   await expect(front).toContainText("Pick the planet");
-  await expect(front.getByRole("alert")).toContainText(
-    "3 questions still unanswered",
-  );
+  await expect(front.getByRole("alert")).toHaveCount(0);
   await front.getByRole("button", { name: "A. Mars", exact: true }).click();
+  await page.getByRole("button", { name: "SATISFIED", exact: true }).click();
   await next.click();
   await front.getByRole("button", { name: "A. True", exact: true }).click();
   await page.getByRole("button", { name: "Previous", exact: true }).click();
@@ -1279,13 +1477,11 @@ test("skipped answers return for completion and entered answers survive navigati
   ).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "SATISFIED", exact: true }).click();
   await next.click();
-  await expect(input).toHaveValue("   ");
-  await expect(input).toHaveAttribute("aria-invalid", "true");
+  await expect(input).toHaveValue("");
+  await expect(input).toHaveAttribute("aria-invalid", "false");
   await review.click();
   await expect(front).toContainText("Name our star");
-  await expect(front.getByRole("alert")).toContainText(
-    "1 question still unanswered",
-  );
+  await expect(front.getByRole("alert")).toHaveCount(0);
   await input.fill("Sun");
   await expect(input).toHaveAttribute("aria-invalid", "false");
   await expect(finish).toHaveCount(0);
@@ -1437,7 +1633,11 @@ test("resuming shuffled cards preserves question and answer order and the rating
   await page.getByRole("button", { name: fixture.title, exact: true }).click();
   const front = page.locator('.flashcard-front[aria-hidden="false"]');
   const prompt = await front.locator(".flashcard-text").innerText();
-  const options = await front.locator(".flashcard-option").allTextContents();
+  const optionLabels = () =>
+    front.locator(".flashcard-option").evaluateAll((buttons) =>
+      buttons.map((button) => button.getAttribute("aria-label")),
+    );
+  const options = await optionLabels();
   await front.locator(".flashcard-option").nth(1).click();
   await page.getByRole("button", { name: "GOOD", exact: true }).click();
   await page.getByRole("combobox", { name: "Flashcard rating filter" }).click();
@@ -1447,7 +1647,7 @@ test("resuming shuffled cards preserves question and answer order and the rating
     page.getByRole("combobox", { name: "Flashcard rating filter" }),
   ).toContainText("GOOD");
   await expect(front.locator(".flashcard-text")).toHaveText(prompt);
-  await expect(front.locator(".flashcard-option")).toHaveText(options);
+  await expect.poll(optionLabels).toEqual(options);
   await expect(front.locator(".flashcard-option").nth(1)).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -1500,6 +1700,9 @@ test("touch swipes over choices and card text navigate without revealing answers
   );
   await expect(front).toContainText("Water is a liquid");
   await swipe('.flashcard-front[aria-hidden="false"] .flashcard-text', -1);
+  await expect(front).toContainText("Name our star");
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
   await expect(front).toContainText("Pick the planet");
   await expect(
     page.locator('.flashcard-back[aria-hidden="false"]'),
@@ -1507,7 +1710,7 @@ test("touch swipes over choices and card text navigate without revealing answers
   await front.getByRole("button", { name: "A. Mars", exact: true }).click();
   await expect(
     front.getByRole("button", { name: "A. Mars", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveAttribute("data-answer-state", "correct");
   await front
     .getByRole("button", { name: "Reveal answer", exact: true })
     .click();
@@ -1516,6 +1719,8 @@ test("touch swipes over choices and card text navigate without revealing answers
   ).toContainText("Mars");
   await swipe('.flashcard-back[aria-hidden="false"]', 1);
   await expect(front).toContainText("Water is a liquid");
+  await expect(page.getByRole("img", { name: "Card 1: satisfied", exact: true }))
+    .toBeVisible();
 });
 
 test("all shared dropdowns allow page scrolling and long menus scroll independently", async ({
@@ -1654,9 +1859,11 @@ test("the study-mode filter shows only the selected emoji rating and updates aft
   await page
     .getByRole("button", { name: "Show all cards", exact: true })
     .click();
+  await front.getByRole("button", { name: "A. Mars", exact: true }).click();
   await page.getByRole("button", { name: "BAD", exact: true }).click();
   await page.getByRole("button", { name: "Next card", exact: true }).click();
   await expect(front).toContainText("Water is a liquid");
+  await front.getByRole("button", { name: "A. True", exact: true }).click();
   await page.getByRole("button", { name: "BAD", exact: true }).click();
   await chooseFilter("bad");
   await expect(front).toContainText("Pick the planet");

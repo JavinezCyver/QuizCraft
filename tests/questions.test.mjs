@@ -8,7 +8,21 @@ import {
   optionIndices,
   hasDuplicateOptions,
   allowsMultipleSelections,
+  hasCompleteAnswer,
 } from "../src/lib/questions.ts";
+
+test("study completion requires every required choice and a nonempty typed answer", () => {
+  const card = { type: "multiple", options: ["Mars", "Moon", "Earth"], accepted: ["Mars", "Earth"], correctOptions: [0, 2] };
+  assert.equal(hasCompleteAnswer(card, []), false);
+  assert.equal(hasCompleteAnswer(card, [0]), false);
+  assert.equal(hasCompleteAnswer(card, [0, 0]), false);
+  assert.equal(hasCompleteAnswer(card, [0, 99]), false);
+  assert.equal(hasCompleteAnswer(card, [0, 2]), true);
+  assert.equal(hasCompleteAnswer(card, [0, 1]), true);
+  assert.equal(hasCompleteAnswer({ ...card, type: "boolean", correctOptions: [0] }, [1]), true);
+  assert.equal(hasCompleteAnswer({ ...card, type: "blank" }, [], "   "), false);
+  assert.equal(hasCompleteAnswer({ ...card, type: "blank" }, [], "Sun"), true);
+});
 
 test("multiple choice requires all correct answers and rejects extra choices", () => {
   const question = { type: "multiple", accepted: ["Mars", "Earth"] };

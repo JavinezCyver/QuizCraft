@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowLeft,
@@ -18,6 +25,8 @@ import { highlightAnswer } from "../lib/answer-highlight";
 import { pendingReviewIds, type ReviewRating } from "../lib/review";
 import {
   allowsMultipleSelections,
+  correctIndices,
+  hasCompleteAnswer,
   optionIndices,
   reorderOptions,
 } from "../lib/questions";
@@ -34,6 +43,12 @@ const reviewRatings: {
   label: string;
   hint: string;
 }[] = [
+  {
+    value: "unrated",
+    emoji: "\u{1F610}",
+    label: "UNRATED",
+    hint: "Not rated yet; review after this pass",
+  },
   {
     value: "bad",
     emoji: "\u{1F620}",
@@ -53,6 +68,12 @@ const reviewRatings: {
     hint: "No more repeats this session",
   },
 ];
+const reviewColors: Record<ReviewRating, string> = {
+  unrated: "#f4d6d9",
+  bad: "#ef4444",
+  good: "#3b82f6",
+  satisfied: "#22c55e",
+};
 
 function shuffled<T>(values: T[]): T[] {
   const copy = [...values];
@@ -106,6 +127,7 @@ export function Flashcards({
     [reviewFilter, setReviewFilter] = useState<"all" | ReviewRating>("all"),
     [flipped, setFlipped] = useState(false),
     [motion, setMotion] = useState(0),
+    [celebration, setCelebration] = useState<string | null>(null),
     [selections, setSelections] = useState<Record<string, number[]>>({}),
     [typedAnswers, setTypedAnswers] = useState<Record<string, string>>({}),
     [showRequired, setShowRequired] = useState(false),
@@ -117,8 +139,14 @@ export function Flashcards({
   const sessionIdentity = useRef({ id: "", started: 0 });
   const expired = !complete && deadline !== null && now >= deadline;
   const canReveal = quiz?.settings.showAnswers !== false && !expired;
+  useEffect(() => {
+    if (!celebration) return;
+    const timer = window.setTimeout(() => setCelebration(null), 1000);
+    return () => window.clearTimeout(timer);
+  }, [celebration]);
   function restart() {
     if (!sourceQuiz.current || finishing) return;
+    setCelebration(null);
     const { deck, orders } = studyDeck(sourceQuiz.current);
     sourceOptions.current = orders;
     setQuiz(deck);
@@ -143,9 +171,12 @@ export function Flashcards({
   }
   useEffect(() => {
     if (deadline === null || expired || complete) return;
-    const timer = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(timer);
-  }, [deadline, expired, complete]);
+    const timer = setTimeout(
+      () => setNow(Date.now()),
+      Math.max(1, Math.min(1000, deadline - Date.now())),
+    );
+    return () => clearTimeout(timer);
+  }, [deadline, expired, complete, now]);
   const gesture = useRef<{ x: number; y: number } | null>(null),
     ignoreClickUntil = useRef(0);
   useEffect(() => {
@@ -246,7 +277,7 @@ export function Flashcards({
       deadline,
     };
   }
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (previewQuiz || loading || error || !quiz || !sourceQuiz.current) return;
     let active = true;
     void saveStudyProgress(quiz.id, progressSnapshot())
@@ -278,23 +309,110 @@ export function Flashcards({
     previewQuiz,
   ]);
   const allQuestions = quiz?.questions || [];
-  const questions = allQuestions.filter(
-    (card) => reviewFilter === "all" || ratings[card.id] === reviewFilter,
+  function ratingFor(id: string, current = ratings) {
+    return current[id] ?? "unrated";
+  }
+  const questionById = useMemo(
+    () => new Map(allQuestions.map((card) => [card.id, card])),
+    [allQuestions],
   );
-  const question = questions.find(
-    (question) => question.id === sequence[index],
+  const questions = useMemo(
+    () =>
+      allQuestions.filter(
+        (card) =>
+          reviewFilter === "all" ||
+          (ratings[card.id] ?? "unrated") === reviewFilter,
+      ),
+    [allQuestions, reviewFilter, ratings],
+  );
+  const currentCard = questionById.get(sequence[index]);
+  const question =
+    currentCard &&
+    (reviewFilter === "all" || ratingFor(currentCard.id) === reviewFilter)
+      ? currentCard
+      : undefined;
+  const currentQuestionIndex = useMemo(
+    () => questions.findIndex((card) => card.id === question?.id),
+    [questions, question],
+  );
+  const answeredIds = useMemo(
+    () =>
+      allQuestions
+        .filter((card) =>
+          hasCompleteAnswer(card, selections[card.id], typedAnswers[card.id]),
+        )
+        .map((card) => card.id),
+    [allQuestions, selections, typedAnswers],
+  );
+  const answeredSet = useMemo(() => new Set(answeredIds), [answeredIds]);
+  const visitedIds = useMemo(
+    () => new Set(sequence.slice(0, index + 1)),
+    [sequence, index],
+  );
+  const progressMarkers = useMemo(
+    () =>
+      questions.map((card, i) => {
+        const rating = ratings[card.id];
+        return (
+          <span
+            key={card.id}
+            role="img"
+            aria-label={`Card ${i + 1}: ${rating || "not rated"}`}
+            style={{
+              backgroundColor: rating
+                ? reviewColors[rating]
+                : visitedIds.has(card.id)
+                  ? "var(--purple)"
+                  : "transparent",
+            }}
+          />
+        );
+      }),
+    [questions, ratings, visitedIds],
   );
   const multipleSelections = !!question && allowsMultipleSelections(question);
+  const correctChoices = useMemo(
+    () => new Set(question ? correctIndices(question) : []),
+    [question],
+  );
+  const selectedChoices = question ? selections[question.id] || [] : [];
+  const choiceAnswerComplete =
+    !!question &&
+    ["multiple", "boolean"].includes(question.type) &&
+    correctChoices.size > 0 &&
+    selectedChoices.length >= correctChoices.size;
+  const selectedCorrectCount = selectedChoices.filter((choice) =>
+    correctChoices.has(choice),
+  ).length;
+  const revealChoiceResults =
+    choiceAnswerComplete &&
+    (selectedCorrectCount !== correctChoices.size ||
+      selectedChoices.length !== correctChoices.size);
+  const choiceFeedback =
+    selectedCorrectCount === correctChoices.size &&
+    selectedChoices.length === correctChoices.size
+      ? "🎉 Perfect!"
+      : selectedCorrectCount > 0
+        ? "🙂 Almost!"
+        : "💪 Not quite!";
   function isAnswered(card: Question) {
-    return ["multiple", "boolean"].includes(card.type)
-      ? !!selections[card.id]?.length
-      : !!typedAnswers[card.id]?.trim();
+    return answeredSet.has(card.id);
   }
-  const unanswered = allQuestions.filter((card) => !isAnswered(card));
-  const pending = pendingReviewIds(
-    allQuestions.map((card) => card.id),
-    ratings,
-    allQuestions.filter(isAnswered).map((card) => card.id),
+  function hasLockedAnswer(card: Question) {
+    return ["multiple", "boolean"].includes(card.type) && isAnswered(card);
+  }
+  const unanswered = useMemo(
+    () => allQuestions.filter((card) => !answeredSet.has(card.id)),
+    [allQuestions, answeredSet],
+  );
+  const pending = useMemo(
+    () =>
+      pendingReviewIds(
+        allQuestions.map((card) => card.id),
+        ratings,
+        answeredIds,
+      ),
+    [allQuestions, ratings, answeredIds],
   );
   const currentUnanswered = !!question && !isAnswered(question);
   const requiredNoteId = question
@@ -302,10 +420,11 @@ export function Flashcards({
     : undefined;
   function changeFilter(value: "all" | ReviewRating) {
     if (finishing) return;
+    setCelebration(null);
     setReviewFilter(value);
     setSequence(
       allQuestions
-        .filter((card) => value === "all" || ratings[card.id] === value)
+        .filter((card) => value === "all" || ratingFor(card.id) === value)
         .map((card) => card.id),
     );
     setIndex(0);
@@ -322,12 +441,14 @@ export function Flashcards({
       // Continue through the remaining cards before starting another filtered pass.
       const remaining = sequence
         .slice(index + 1)
-        .filter((id) => nextRatings[id] === reviewFilter);
+        .filter((id) => ratingFor(id, nextRatings) === reviewFilter);
       setSequence(
         remaining.length
           ? remaining
           : allQuestions
-              .filter((card) => nextRatings[card.id] === reviewFilter)
+              .filter(
+                (card) => ratingFor(card.id, nextRatings) === reviewFilter,
+              )
               .map((card) => card.id),
       );
       setIndex(0);
@@ -336,27 +457,77 @@ export function Flashcards({
       setShowRequired(false);
     }
   }
-  async function move(direction: number) {
+  async function move(direction: number, swipeRating?: ReviewRating) {
     if (!quiz || loading || expired || finishing) return;
-    const next = index + direction;
+    setCelebration(null);
+    const answerComplete =
+      question &&
+      (["multiple", "boolean"].includes(question.type)
+        ? choiceAnswerComplete
+        : isAnswered(question));
+    const nextRating =
+      direction > 0 && question
+        ? !answerComplete
+          ? "unrated"
+          : swipeRating
+        : undefined;
+    const nextRatings =
+      nextRating && question
+        ? { ...ratings, [question.id]: nextRating }
+        : ratings;
+    if (nextRating) setRatings(nextRatings);
+    const leavesFilter =
+      nextRating && reviewFilter !== "all" && reviewFilter !== nextRating;
+    if (leavesFilter) {
+      const remaining = sequence
+        .slice(index + 1)
+        .filter((id) => ratingFor(id, nextRatings) === reviewFilter);
+      if (remaining.length) {
+        setSequence(remaining);
+        setIndex(0);
+        setFlipped(false);
+        setMotion(direction);
+        setShowRequired(false);
+        return;
+      }
+    }
+    const next = leavesFilter ? sequence.length : index + direction;
     if (next < 0) return;
     if (next >= sequence.length) {
-      if (pending.length) {
+      const nextPending = pendingReviewIds(
+        allQuestions.map((card) => card.id),
+        nextRatings,
+        allQuestions.filter(isAnswered).map((card) => card.id),
+      );
+      if (nextPending.length) {
+        const repeating = new Set(
+          nextPending.filter((id) => !hasLockedAnswer(questionById.get(id)!)),
+        );
+        setSelections((current) =>
+          Object.fromEntries(
+            Object.entries(current).filter(([id]) => !repeating.has(id)),
+          ),
+        );
+        setTypedAnswers((current) =>
+          Object.fromEntries(
+            Object.entries(current).filter(([id]) => !repeating.has(id)),
+          ),
+        );
         setReviewFilter("all");
-        setSequence(pending);
+        setSequence(nextPending);
         setIndex(0);
         setFlipped(false);
         setMotion(1);
-        setShowRequired(true);
+        setShowRequired(false);
       } else {
         setFinishing(true);
         setSaveError("");
         try {
           if (!previewQuiz)
-            await recordStudyCompletion(
-              sourceQuiz.current!,
-              progressSnapshot(true),
-            );
+            await recordStudyCompletion(sourceQuiz.current!, {
+              ...progressSnapshot(true),
+              ratings: nextRatings,
+            });
           setComplete(true);
         } catch (error) {
           setSaveError((error as Error).message);
@@ -385,7 +556,7 @@ export function Flashcards({
       <Dialog.Portal>
         <Dialog.Overlay className="flashcards-backdrop" />
         <Dialog.Content
-          className={`flashcards-page${question?.questionImage || question?.answerImage ? " has-picture-card" : ""}`}
+          className={`flashcards-page has-fit-cards${question?.questionImage || question?.answerImage ? " has-picture-card" : ""}`}
           onKeyDown={(event) => {
             if (
               (event.target as Element).closest(
@@ -405,9 +576,11 @@ export function Flashcards({
         >
           <Dialog.Title className="sr-only">Flashcard study mode</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Use the Reveal answer button to see the answer. Swipe left for the
-            next question and right for the previous question. Press Escape to
-            exit.
+            Selected choices have a green border when correct and a red border
+            when incorrect. Use Reveal answer to flip the card. Swipe left for
+            the next question and mark a completed answer SATISFIED, and right
+            to also advance and mark a completed answer BAD. Use Previous to go
+            back. Press Escape to exit.
           </Dialog.Description>
           <button className="text-link" onClick={onBack}>
             <ArrowLeft size={16} /> {backLabel}
@@ -435,7 +608,7 @@ export function Flashcards({
             <div className="flashcards-status">
               <span aria-live="polite" aria-atomic="true">
                 {question
-                  ? `Card ${questions.findIndex((q) => q.id === question.id) + 1} of ${questions.length}`
+                  ? `Card ${currentQuestionIndex + 1} of ${questions.length}`
                   : `${questions.length} cards`}
               </span>
               <div className="flashcard-study-settings">
@@ -532,31 +705,7 @@ export function Flashcards({
                 role="group"
                 aria-label="Card review progress"
               >
-                {questions.map((card, i) => {
-                  const rating = ratings[card.id];
-                  const visited = sequence
-                    .slice(0, index + 1)
-                    .includes(card.id);
-                  return (
-                    <span
-                      key={card.id}
-                      role="img"
-                      aria-label={`Card ${i + 1}: ${rating || "not rated"}`}
-                      style={{
-                        backgroundColor:
-                          rating === "bad"
-                            ? "#ef4444"
-                            : rating === "good"
-                              ? "#22c55e"
-                              : rating === "satisfied"
-                                ? "#a78bfa"
-                                : visited
-                                  ? "var(--purple)"
-                                  : "transparent",
-                      }}
-                    />
-                  );
-                })}
+                {progressMarkers}
               </div>
               <div
                 role="group"
@@ -583,22 +732,33 @@ export function Flashcards({
                     dy = event.clientY - start.y;
                   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.25) {
                     ignoreClickUntil.current = Date.now() + 350;
-                    move(dx < 0 ? 1 : -1);
+                    move(1, dx < 0 ? "satisfied" : "bad");
                   }
                 }}
               >
                 <span
                   className={`flashcard-inner ${motion > 0 ? "swipe-next" : motion < 0 ? "swipe-previous" : ""}`}
-                  key={`${question.id}-${index}`}
+                  key={`${sessionIdentity.current.id}-${question.id}-${index}`}
                 >
                   <FlashcardFace
                     side="front"
                     hidden={flipped}
-                    fit={!!(question.questionImage || question.answerImage)}
+                    fit
+                    footer={
+                      ["multiple", "boolean"].includes(question.type) ? (
+                        <span
+                          className="flashcard-choice-feedback"
+                          role="status"
+                          aria-live="polite"
+                          aria-atomic="true"
+                        >
+                          {choiceAnswerComplete ? choiceFeedback : ""}
+                        </span>
+                      ) : undefined
+                    }
                   >
                     <span className="eyebrow">
-                      QUESTION{" "}
-                      {questions.findIndex((q) => q.id === question.id) + 1}
+                      QUESTION {currentQuestionIndex + 1}
                     </span>
                     <span className="flashcard-text">
                       <FormattedQuestion
@@ -659,42 +819,107 @@ export function Flashcards({
                         aria-label="Answer choices (required)"
                         aria-describedby={requiredNoteId}
                       >
-                        <span className="muted">
-                          {question.type === "multiple"
-                            ? multipleSelections
-                              ? "Select all correct answers, then reveal to check."
-                              : "Select one answer, then reveal to check."
-                            : "Select True or False, then reveal to check."}
-                        </span>
                         {question.options.map((option, i) => (
                           <button
                             type="button"
                             className="flashcard-option"
+                            disabled={choiceAnswerComplete}
                             key={i}
+                            aria-label={`${String.fromCharCode(65 + i)}. ${option}`}
                             aria-pressed={
                               selections[question.id]?.includes(i) ?? false
+                            }
+                            data-answer-state={
+                              revealChoiceResults || selectedChoices.includes(i)
+                                ? correctChoices.has(i)
+                                  ? "correct"
+                                  : "incorrect"
+                                : undefined
+                            }
+                            aria-describedby={
+                              selectedChoices.includes(i) || revealChoiceResults
+                                ? `${requiredNoteId}-${i}`
+                                : undefined
                             }
                             onClick={(event) => {
                               event.stopPropagation();
                               if (
-                                event.detail !== 0 &&
-                                Date.now() < ignoreClickUntil.current
+                                expired ||
+                                finishing ||
+                                choiceAnswerComplete ||
+                                (event.detail !== 0 &&
+                                  Date.now() < ignoreClickUntil.current)
                               )
                                 return;
-                              setSelections((current) => {
-                                const selected = current[question.id] || [];
-                                return {
-                                  ...current,
-                                  [question.id]: !multipleSelections
-                                    ? [i]
-                                    : selected.includes(i)
-                                      ? selected.filter((value) => value !== i)
-                                      : [...selected, i],
-                                };
+                              const selected = selections[question.id] || [];
+                              const next = !multipleSelections
+                                ? [i]
+                                : selected.includes(i)
+                                  ? selected.filter((value) => value !== i)
+                                  : [...selected, i];
+                              setSelections({
+                                ...selections,
+                                [question.id]: next,
                               });
+                              if (
+                                correctChoices.size > 0 &&
+                                next.length === correctChoices.size &&
+                                next.every((choice) =>
+                                  correctChoices.has(choice),
+                                ) &&
+                                !window.matchMedia(
+                                  "(prefers-reduced-motion: reduce)",
+                                ).matches
+                              ) {
+                                setCelebration(question.id);
+                              }
+                              const options =
+                                event.currentTarget.closest(
+                                  ".flashcard-options",
+                                );
+                              options?.getAnimations().forEach((animation) => {
+                                if (animation.id === "incorrect-answer-shake")
+                                  animation.cancel();
+                              });
+                              if (
+                                options &&
+                                correctChoices.size > 0 &&
+                                next.length >= correctChoices.size &&
+                                (next.length !== correctChoices.size ||
+                                  next.some(
+                                    (choice) => !correctChoices.has(choice),
+                                  )) &&
+                                !window.matchMedia(
+                                  "(prefers-reduced-motion: reduce)",
+                                ).matches
+                              ) {
+                                const shake = options.animate(
+                                  [0, -3, 3, -2, 2, 0].map((offset) => ({
+                                    transform: `translateX(${offset}px)`,
+                                  })),
+                                  { duration: 280, easing: "ease-out" },
+                                );
+                                shake.id = "incorrect-answer-shake";
+                              }
                             }}
                           >
-                            {String.fromCharCode(65 + i)}. {option}
+                            <span className="flashcard-option-label">
+                              {String.fromCharCode(65 + i)}.{" "}
+                            </span>
+                            <span className="flashcard-option-text">
+                              {option}
+                            </span>
+                            {(selectedChoices.includes(i) ||
+                              revealChoiceResults) && (
+                              <span
+                                id={`${requiredNoteId}-${i}`}
+                                className="sr-only"
+                              >
+                                {correctChoices.has(i)
+                                  ? "Correct answer"
+                                  : "Incorrect answer"}
+                              </span>
+                            )}
                           </button>
                         ))}
                       </span>
@@ -721,11 +946,7 @@ export function Flashcards({
                       {canReveal ? "Reveal answer" : "Answer reveal is off"}
                     </button>
                   </FlashcardFace>
-                  <FlashcardFace
-                    side="back"
-                    hidden={!flipped}
-                    fit={!!(question.questionImage || question.answerImage)}
-                  >
+                  <FlashcardFace side="back" hidden={!flipped} fit>
                     {!["multiple", "boolean"].includes(question.type) &&
                       typedAnswers[question.id]?.trim() && (
                         <span className="flashcard-submitted-answer">
@@ -803,6 +1024,33 @@ export function Flashcards({
                     </button>
                   </FlashcardFace>
                 </span>
+                {celebration === question.id && (
+                  <span className="flashcard-celebration" aria-hidden="true">
+                    {Array.from({ length: 20 }, (_, i) => {
+                      const angle = (i / 20) * Math.PI * 2;
+                      const distance = 65 + (i % 4) * 30;
+                      return (
+                        <span
+                          key={i}
+                          className="flashcard-confetti"
+                          style={
+                            {
+                              backgroundColor: [
+                                "#4b8060",
+                                "#fbbf24",
+                                "#a78bfa",
+                                "#60a5fa",
+                              ][i % 4],
+                              "--confetti-x": `${Math.cos(angle) * distance}px`,
+                              "--confetti-y": `${Math.sin(angle) * distance - 35}px`,
+                              "--confetti-spin": `${i * 77}deg`,
+                            } as React.CSSProperties
+                          }
+                        />
+                      );
+                    })}
+                  </span>
+                )}
                 <div
                   className="flashcard-ratings"
                   role="group"
@@ -814,7 +1062,7 @@ export function Flashcards({
                       key={value}
                       className={`flashcard-rating review-${value}`}
                       aria-label={label}
-                      aria-pressed={ratings[question.id] === value}
+                      aria-pressed={ratingFor(question.id) === value}
                       title={`${label}: ${hint}`}
                       onClick={(event) => {
                         if (

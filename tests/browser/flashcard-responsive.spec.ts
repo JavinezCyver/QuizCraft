@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 import { loadLayoutFixtures } from "./layout-fixture";
 
 async function loadStudy(page: Page) {
@@ -76,6 +76,11 @@ async function noHorizontalOverflow(page: Page) {
       (element) => element.scrollWidth - element.clientWidth,
     ),
   ).toBeLessThanOrEqual(1);
+}
+
+async function clickCardControl(page: Page, control: Locator) {
+  await control.scrollIntoViewIfNeeded();
+  await control.click();
 }
 
 for (const [width, height] of [
@@ -156,26 +161,26 @@ for (const [width, height] of [
         exact: true,
       });
       await expect(picture).toBeVisible();
-      await expect
-        .poll(() =>
-          face.evaluate((element) => {
-            const frame = element.getBoundingClientRect();
-            return [
-              ...element.querySelectorAll<HTMLElement>(
-                ".flashcard-image, .flashcard-text, button, input",
-              ),
-            ].every((child) => {
-              const box = child.getBoundingClientRect();
-              return (
-                box.top >= frame.top - 1 &&
-                box.bottom <= frame.bottom + 1 &&
-                box.left >= frame.left - 1 &&
-                box.right <= frame.right + 1
-              );
-            });
-          }),
-        )
-        .toBe(true);
+      const elements = face.locator(
+        ".flashcard-image, .flashcard-text, button, input",
+      );
+      for (const element of await elements.all()) {
+        const placement = () => element.evaluate((child) => {
+          const frame = child.closest(".flashcard-face-viewport")!
+            .getBoundingClientRect();
+          const box = child.getBoundingClientRect();
+          return {
+            visible: box.top >= frame.top - 1 &&
+              box.bottom <= frame.bottom + 1 &&
+              box.left >= frame.left - 1 && box.right <= frame.right + 1,
+            previous: box.top < frame.top - 1,
+            bounds: { top: box.top, bottom: box.bottom, left: box.left, right: box.right },
+            viewport: { top: frame.top, bottom: frame.bottom, left: frame.left, right: frame.right },
+          };
+        });
+        await element.scrollIntoViewIfNeeded();
+        expect((await placement()).visible).toBe(true);
+      }
       const image = (await picture.boundingBox())!;
       expect(image.width / image.height).toBeCloseTo(
         side === "front" ? 900 / 1600 : 1600 / 900,
@@ -206,13 +211,13 @@ for (const [width, height] of [
         await page
           .getByRole("textbox", { name: "Your answer", exact: true })
           .fill("Bruce");
-      await page
-        .getByRole("button", { name: "Reveal answer", exact: true })
-        .click();
+      await clickCardControl(page,
+        page.getByRole("button", { name: "Reveal answer", exact: true }),
+      );
       await checkFit("back");
-      await page
-        .getByRole("button", { name: "Show question", exact: true })
-        .click();
+      await clickCardControl(page,
+        page.getByRole("button", { name: "Show question", exact: true }),
+      );
       await checkFit("front");
       if (index === 0 && (width === 390 || width === 568))
         await page.screenshot({
@@ -261,12 +266,14 @@ for (const [width, height] of [
         page.getByRole("button", { name: "Next card", exact: true }),
       ).toBeInViewport({ ratio: 1 });
     const front = page.locator('.flashcard-front[aria-hidden="false"]');
-    await front.getByRole("button").filter({ hasText: /^A\./ }).click();
+    const firstChoice = front.getByRole("button").filter({ hasText: /^A\./ });
+    // Long cards keep text readable and scroll inside the current question.
+    await clickCardControl(page, firstChoice);
     const reveal = page.getByRole("button", {
       name: "Reveal answer",
       exact: true,
     });
-    await reveal.click();
+    await clickCardControl(page, reveal);
     await expect(
       page.locator('.flashcard-back[aria-hidden="false"]'),
     ).toContainText("Choice 1");
@@ -286,7 +293,7 @@ for (const [width, height] of [
     await front
       .getByRole("textbox", { name: "Your answer", exact: true })
       .fill("bruce");
-    await reveal.click();
+    await clickCardControl(page, reveal);
     const back = page.locator('.flashcard-back[aria-hidden="false"]');
     await expect(back.locator("mark")).toHaveText(["bruce", "Bruce"]);
     await expect(back.locator(".flashcard-explanation")).toHaveCount(0);
@@ -303,6 +310,60 @@ for (const [width, height] of [
     await page.getByRole("option").filter({ hasText: "SATISFIED" }).click();
     await expect(front).toContainText("A long question:");
     await noHorizontalOverflow(page);
+  });
+}
+
+for (const [width, height] of [[320, 568], [390, 844], [568, 320], [768, 1024], [1440, 900]]) {
+  test(`answer labels stay beside wrapping text at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await loadStudy(page);
+    await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve) => {
+        const request = indexedDB.open("quizcraft-offline", 1);
+        request.onsuccess = () => resolve(request.result);
+      });
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction("data", "readwrite");
+        const store = tx.objectStore("data");
+        const request = store.get("library");
+        request.onsuccess = () => {
+          const data = request.result;
+          const quiz = data.quizzes[0];
+          Object.assign(quiz.questions[0], {
+            prompt: "Choose the answer",
+            options: ["ASDSASA", "SADASD", "ASDASD", "ASASADASDASD".repeat(8)],
+            accepted: ["ASDSASA"], correctOptions: [0],
+          });
+          store.put(data, "library");
+        };
+        tx.oncomplete = () => { db.close(); resolve(); };
+      });
+    });
+    await page.reload();
+    await page.locator(".quiz-card .card-title").first().click();
+    const options = page.locator('.flashcard-front[aria-hidden="false"] .flashcard-option');
+    await expect(options).toHaveCount(4);
+    for (const option of await options.all()) {
+      const geometry = await option.evaluate((button) => {
+        const label = button.querySelector(".flashcard-option-label")!.getBoundingClientRect();
+        const text = button.querySelector(".flashcard-option-text")!.getBoundingClientRect();
+        const box = button.getBoundingClientRect();
+        return { aligned: Math.abs(label.top - text.top) < 1, beside: label.right <= text.left,
+          inside: text.left >= box.left && text.right <= box.right && text.bottom <= box.bottom,
+          overflow: button.scrollWidth - button.clientWidth, height: box.height };
+      });
+      expect(geometry.aligned && geometry.beside && geometry.inside).toBe(true);
+      expect(geometry.overflow).toBeLessThanOrEqual(1);
+      expect(geometry.height).toBeGreaterThanOrEqual(44);
+    }
+    if (width === 320 || width === 390) {
+      const first = (await options.nth(0).boundingBox())!;
+      const second = (await options.nth(1).boundingBox())!;
+      expect(Math.abs(first.x - second.x)).toBeLessThanOrEqual(1);
+      expect(second.y).toBeGreaterThan(first.y);
+    }
+    await noHorizontalOverflow(page);
+    await page.screenshot({ path: `test-results/answer-text-${width}x${height}.png` });
   });
 }
 

@@ -10,6 +10,7 @@ test("the next pass contains BAD, GOOD and unrated cards once, in deck order", (
         a: "good",
         b: "satisfied",
         c: "bad",
+        d: "unrated",
       },
       ["a", "b", "c", "d"],
     ),

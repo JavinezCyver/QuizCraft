@@ -10,10 +10,13 @@ import {
 export async function exportData(quiz?: Quiz): Promise<string> {
   const payload = quiz
     ? { format: "quizcraft-quizzes", version: 1, quizzes: [quiz] }
-    : await withData((data) => ({
-        ...data,
-        attempts: data.attempts.filter((a) => a.result),
-      }));
+    : await withData(
+        (data) => ({
+          ...data,
+          attempts: data.attempts.filter((a) => a.result),
+        }),
+        "readonly",
+      );
   return JSON.stringify(payload, null, 2);
 }
 export function downloadData(text: string, filename: string) {
@@ -27,11 +30,9 @@ export function downloadData(text: string, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export async function importQuizzes(text: string) {
-  if (text.length > 30_000_000)
-    throw new Error("Choose a file smaller than 30 MB.");
   const payload = JSON.parse(text);
   const values = payload.quizzes;
-  if (!Array.isArray(values) || !values.length || values.length > 1000)
+  if (!Array.isArray(values) || !values.length)
     throw new Error("This file does not contain quizzes.");
   const quizzes = values.map(prepareQuiz);
   await withData((data) => {
@@ -40,8 +41,6 @@ export async function importQuizzes(text: string) {
   return quizzes.length;
 }
 export async function restoreBackup(text: string) {
-  if (text.length > 30_000_000)
-    throw new Error("Choose a file smaller than 30 MB.");
   const payload: OfflineData = JSON.parse(text);
   if (
     payload.version !== 1 ||
@@ -49,8 +48,7 @@ export async function restoreBackup(text: string) {
     !Array.isArray(payload.bookmarks) ||
     !Array.isArray(payload.attempts) ||
     !payload.user ||
-    typeof payload.user.name !== "string" ||
-    payload.quizzes.length > 1000
+    typeof payload.user.name !== "string"
   )
     throw new Error("Invalid QuizCraft backup.");
   const validId = (id: unknown): id is string =>
@@ -63,6 +61,9 @@ export async function restoreBackup(text: string) {
       throw new Error("Invalid quiz identifiers in backup.");
     ids.add(q.id);
     const quiz = { ...prepareQuiz(q), id: q.id };
+    if (typeof q.created === "string" && Number.isFinite(Date.parse(q.created)))
+      quiz.created = q.created;
+    if (Number.isSafeInteger(q.plays) && q.plays! >= 0) quiz.plays = q.plays;
     const questionIds = new Set<string>();
     quiz.questions!.forEach((card, index) => {
       const id = q.questions![index].id;

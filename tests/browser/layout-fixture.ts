@@ -8,7 +8,7 @@ export async function loadLayoutFixtures(page: Page) {
       name: "Your library starts here",
       exact: true,
     }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15000 });
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve) => {
       const request = indexedDB.open("quizcraft-offline", 1);

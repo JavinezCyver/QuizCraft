@@ -71,6 +71,84 @@ async function fits(page: Page) {
   }
 }
 
+for (const width of [320, 390, 768, 1440]) {
+  test(`answer fields wrap, grow, and retain their values at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.addInitScript(() =>
+      localStorage.setItem("quizcraft-theme", "dark"),
+    );
+    await page.goto("/");
+    await createQuiz(page);
+    await page
+      .getByRole("button", { name: "Add first question", exact: true })
+      .click();
+    await page
+      .getByRole("combobox", { name: "Question type", exact: true })
+      .click();
+    await page
+      .getByRole("option", { name: "Multiple choice", exact: true })
+      .click();
+    const option = page.getByRole("textbox", { name: "Option 1", exact: true });
+    const value = "A longer answer that must wrap. " + "LongAnswer".repeat(3);
+    await option.fill(value);
+    const explanation = page.getByRole("textbox", {
+      name: "Answer explanation (optional)",
+      exact: true,
+    });
+    await explanation.fill(
+      "An explanation that should remain readable and wrap without cutting off its text. ".repeat(
+        2,
+      ),
+    );
+    await expect(option).toHaveValue(value);
+    await expect
+      .poll(() => option.evaluate((e) => e.scrollHeight - e.clientHeight))
+      .toBeLessThanOrEqual(1);
+    await expect
+      .poll(() => explanation.evaluate((e) => e.scrollHeight - e.clientHeight))
+      .toBeLessThanOrEqual(1);
+    for (const row of await page.locator(".option-edit").all()) {
+      for (const control of await row
+        .locator(".correct-option-toggle, textarea, button")
+        .all()) {
+        const box = (await control.boundingBox())!;
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(box.width).toBeGreaterThanOrEqual(44);
+      }
+    }
+    const checkbox = page.getByRole("checkbox", {
+      name: "Mark option 1 correct",
+      exact: true,
+    });
+    await checkbox.check();
+    await expect(checkbox).toBeChecked();
+    await fits(page);
+    await option.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `test-results/answer-editor-${width}.png` });
+    const oldHeight = (await option.boundingBox())!.height;
+    await page.setViewportSize({
+      width: width < 768 ? 1024 : 320,
+      height: 844,
+    });
+    await fits(page);
+    await expect(option).toHaveValue(value);
+    await expect
+      .poll(() => option.evaluate((e) => e.scrollHeight - e.clientHeight))
+      .toBeLessThanOrEqual(1);
+    if (width < 768)
+      await expect
+        .poll(async () => (await option.boundingBox())!.height)
+        .toBeLessThanOrEqual(oldHeight);
+    await option.fill("Short");
+    await expect
+      .poll(async () => (await option.boundingBox())!.height)
+      .toBeLessThanOrEqual(50);
+    await expect(checkbox).toBeChecked();
+  });
+}
+
 for (const [width, height] of [
   [320, 568],
   [390, 844],

@@ -4,6 +4,25 @@ export function allowsMultipleSelections(question: Question): boolean {
   return question.type === "multiple" && correctIndices(question).length > 1;
 }
 
+export function hasCompleteAnswer(
+  question: Question,
+  selected: number[] = [],
+  typed = "",
+): boolean {
+  if (!["multiple", "boolean"].includes(question.type)) return !!typed.trim();
+  const required = correctIndices(question).length;
+  return (
+    required > 0 &&
+    new Set(selected).size >= required &&
+    selected.every(
+      (index) =>
+        Number.isInteger(index) &&
+        index >= 0 &&
+        index < question.options.length,
+    )
+  );
+}
+
 export function optionIndices(question: Question, options: string[]): number[] {
   const available = question.options.map((_, index) => index);
   return options.map((option) => {

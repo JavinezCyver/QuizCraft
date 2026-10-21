@@ -2412,6 +2412,8 @@ label small {
   font-size: 14px;
   line-height: 1.8;
   white-space: pre-wrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .flashcard-flip-hint {
   display: flex;
@@ -5317,6 +5319,7 @@ main {
 
 .flashcard-options {
   display: grid;
+  container-type: inline-size;
   gap: 8px;
   width: 100%;
   max-width: 620px;
@@ -5324,11 +5327,28 @@ main {
   font-size: 16px;
 }
 .flashcard-option {
-  display: block;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: start;
+  column-gap: 6px;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow-wrap: anywhere;
+}
+.flashcard-option-label {
+  white-space: nowrap;
+}
+.flashcard-option-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+@container (max-width: 420px) {
+  .flashcard-option {
+    grid-column: 1 / -1;
+  }
 }
 
 button.flashcard-option {
@@ -5343,6 +5363,71 @@ button.flashcard-option[aria-pressed="true"] {
   border-color: var(--border-active);
   background: var(--purple-soft);
   box-shadow: none;
+}
+button.flashcard-option[data-answer-state="correct"] {
+  border-color: #4b8060;
+  box-shadow: inset 0 0 0 1px #4b8060;
+}
+button.flashcard-option:disabled {
+  opacity: 1;
+}
+.flashcard-choice-feedback {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  text-align: center;
+}
+.flashcard-celebration {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+.flashcard-confetti {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 11px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: flashcard-confetti-burst 900ms ease-out forwards;
+}
+@keyframes flashcard-confetti-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4) rotate(0deg);
+  }
+  15% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--confetti-x)), calc(-50% + var(--confetti-y))) rotate(var(--confetti-spin));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flashcard-confetti {
+    animation: none;
+  }
+}
+.flashcard-face-footer {
+  flex-shrink: 0;
+  min-height: 20px;
+  line-height: 20px;
+  width: 100%;
+  text-align: center;
+}
+button.flashcard-option[data-answer-state="incorrect"] {
+  border-color: #a36363;
+  box-shadow: inset 0 0 0 1px #a36363;
+}
+.dark button.flashcard-option[data-answer-state="correct"] {
+  border-color: #628b70;
+  box-shadow: inset 0 0 0 1px #628b70;
+}
+.dark button.flashcard-option[data-answer-state="incorrect"] {
+  border-color: #b07777;
+  box-shadow: inset 0 0 0 1px #b07777;
 }
 button.flashcard-option:focus-visible,
 button.flashcard-flip-hint:focus-visible {
@@ -5376,8 +5461,9 @@ button.flashcard-flip-hint {
   border: 1px solid var(--border);
 }
 .review-unrated {
-  background: var(--surface);
-  color: var(--muted);
+  --review-border: #f4d6d9;
+  background: #f4d6d9;
+  color: #71464c;
 }
 .review-bad {
   --review-border: rgb(248 113 113 / 45%);
@@ -5386,15 +5472,15 @@ button.flashcard-flip-hint {
   border-color: var(--review-border);
 }
 .review-good {
-  --review-border: rgb(74 222 128 / 45%);
-  color: #166534;
-  background: #dcfce7;
+  --review-border: rgb(96 165 250 / 45%);
+  color: #1e40af;
+  background: #dbeafe;
   border-color: var(--review-border);
 }
 .review-satisfied {
-  --review-border: rgb(167 139 250 / 45%);
-  color: #5b21b6;
-  background: #ede9fe;
+  --review-border: rgb(74 222 128 / 45%);
+  color: #166534;
+  background: #dcfce7;
   border-color: var(--review-border);
 }
 .review-status.is-current {
@@ -5538,6 +5624,9 @@ button.flashcard-flip-hint {
 }
 
 @media (max-height: 500px) and (min-width: 500px) {
+  .flashcards-page .flashcard-face.fits-card {
+    padding: 8px;
+  }
   .flashcards-page {
     display: grid;
     grid-template-columns: minmax(110px, 1fr) auto;
@@ -5584,15 +5673,63 @@ button.flashcard-flip-hint {
   width: fit-content;
   margin-left: auto;
 }
+.question-limit-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .answer-explanation-field {
   margin: 12px 0;
   color: var(--muted);
 }
 .answer-explanation-field textarea {
-  min-height: 52px;
-  height: 52px;
+  min-height: 96px;
+  max-height: 320px;
   margin-top: 6px;
   padding: 8px 10px;
+}
+.answer-options-editor {
+  min-width: 0;
+}
+.answer-options-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.answer-options-editor > p {
+  margin-block: 8px 12px;
+  overflow-wrap: anywhere;
+}
+.answer-options-editor .option-edit {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: clamp(4px, 1vw, 10px);
+  width: 100%;
+  min-width: 0;
+}
+.answer-options-editor .option-edit.is-boolean {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+.answer-options-editor .correct-option-toggle,
+.answer-options-editor .option-edit > .icon-btn {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  justify-self: center;
+}
+.answer-options-editor .option-edit textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 48px;
+  max-height: 240px;
+  margin: 0;
+  padding: 11px 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  resize: vertical;
 }
 .question-prompt-field > label {
   margin-bottom: 8px;
@@ -5789,62 +5926,36 @@ html[data-input-mode="pointer"]
   border-radius: 10px;
   margin: 4px auto;
 }
-.flashcards-page.has-picture-card {
+.flashcards-page.has-fit-cards {
   overflow: hidden;
 }
-.flashcards-page.has-picture-card > .flashcard {
+.flashcards-page.has-fit-cards > .flashcard {
   flex: 1 1 0;
   min-height: 0;
 }
-.flashcards-page.has-picture-card .flashcard-inner {
+.flashcards-page.has-fit-cards .flashcard-inner {
   min-height: 0;
 }
-.flashcards-page .flashcard-face.has-picture {
+.flashcards-page .flashcard-face.fits-card {
   overflow: clip;
   justify-content: center;
   padding: clamp(10px, 2vw, 18px);
   gap: 8px;
 }
+.flashcards-page .flashcard-face.fits-card:has(.flashcard-face-footer) {
+  gap: 4px;
+}
 .flashcard-face-viewport {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   width: 100%;
   min-height: 0;
-  flex-shrink: 0;
-  overflow: clip;
-}
-.flashcard-face-viewport.is-paged {
-  justify-content: flex-start;
-}
-.flashcard-content-controls {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 100%;
-  font-size: 12px;
-  pointer-events: none;
-}
-.flashcard-content-controls button {
-  pointer-events: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: 44px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--purple);
-}
-.flashcard-ratings:has(.flashcard-content-controls) {
-  position: relative;
-  padding-inline: 60px;
-  gap: 8px;
+  flex: 1 1 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 .flashcard-face-content {
   display: flex;
@@ -5853,6 +5964,8 @@ html[data-input-mode="pointer"]
   flex-shrink: 0;
   width: 100%;
   gap: 8px;
+  margin-block: auto;
+  padding-block: 2px;
 }
 .flashcard-face-content > * {
   flex-shrink: 0;
@@ -5865,7 +5978,7 @@ html[data-input-mode="pointer"]
   grid-column: 1 / -1;
 }
 .flashcard-face-content .flashcard-option {
-  font-size: 14px;
+  font-size: clamp(14px, 1.8vw, 16px);
   line-height: 1.4;
 }
 .flashcard-face-content .flashcard-text {
@@ -5877,7 +5990,7 @@ html[data-input-mode="pointer"]
 }
 /* Keep field guidance available to assistive technology without displaying it. */
 .flashcard-required-note:not(.needs-answer),
-.flashcard-face-content .flashcard-options > .muted {
+.flashcard-face-content .flashcard-options > .muted:not(.selection-count) {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -5887,7 +6000,7 @@ html[data-input-mode="pointer"]
   white-space: nowrap;
 }
 @media (max-height: 500px) and (min-width: 500px) {
-  .flashcards-page.has-picture-card {
+  .flashcards-page.has-fit-cards {
     grid-template-rows: auto 6px minmax(0, 1fr) auto;
   }
   .flashcard-face-content {
@@ -5899,6 +6012,9 @@ html[data-input-mode="pointer"]
   .flashcard-face-content.has-long-text {
     display: flex;
     flex-direction: column;
+  }
+  .flashcard-face-content.has-long-text .flashcard-option {
+    grid-column: 1 / -1;
   }
   .flashcard-face-content .flashcard-text {
     font-size: 14px;
@@ -5924,6 +6040,7 @@ html[data-input-mode="pointer"]
     grid-row: 1 / span 4;
     flex-direction: column;
     justify-self: stretch;
+    align-self: center;
     margin-top: 0;
     padding: 6px;
     gap: 4px;
@@ -5932,5 +6049,8 @@ html[data-input-mode="pointer"]
   }
   .flashcard-front .flashcard-face-content > .flashcard-flip-hint {
     grid-row: 1 / span 2;
+  }
+  .flashcard-front:has(.flashcard-face-footer) .flashcard-flip-hint svg {
+    display: none;
   }
 }

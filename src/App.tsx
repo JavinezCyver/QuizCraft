@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowRight,
@@ -213,13 +213,17 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
     setLoading(true);
     setLoadError("");
     try {
-      const [q, u] = await Promise.all([
-        api<Quiz[]>("/quizzes"),
+      const [savedLibrary, u] = await Promise.all([
+        api<Library>("/library"),
         api<User>("/me"),
       ]);
-      setQuizzes(q);
+      setLibrary(savedLibrary);
+      setQuizzes(
+        savedLibrary.quizzes.filter(
+          (quiz) => quiz.status === "published" && quiz.visibility === "public",
+        ),
+      );
       setUser(u);
-      if (u) await refreshLibrary();
       const id = new URLSearchParams(location.search).get("quiz");
       if (id) {
         const selected = await api<Quiz>("/quizzes/" + id);
@@ -343,19 +347,22 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
       notify((error as Error).message);
     }
   }
-  const filtered = quizzes
-    .filter(
-      (q) =>
-        (category === "All topics" || q.category === category) &&
-        `${q.title} ${q.description} ${q.category} ${q.creator}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
-    )
-    .sort((a, b) =>
-      sort === "newest"
-        ? String(b.created).localeCompare(String(a.created))
-        : (b.plays || 0) - (a.plays || 0),
-    );
+  const filtered = useMemo(() => {
+    const needle = search.toLowerCase();
+    return quizzes
+      .filter(
+        (q) =>
+          (category === "All topics" || q.category === category) &&
+          `${q.title} ${q.description} ${q.category} ${q.creator}`
+            .toLowerCase()
+            .includes(needle),
+      )
+      .sort((a, b) =>
+        sort === "newest"
+          ? String(b.created).localeCompare(String(a.created))
+          : (b.plays || 0) - (a.plays || 0),
+      );
+  }, [quizzes, category, search, sort]);
   const explore = () => {
     if (view !== "home") setView("home");
     setTimeout(
@@ -366,23 +373,37 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
       50,
     );
   };
-  const discoverCategories = Array.from(
-    new Set(quizzes.map((q) => q.category)),
-  ).sort((a, b) => a.localeCompare(b));
-  const categories = Array.from(
-    new Set(library.quizzes.map((q) => q.category)),
-  ).sort((a, b) => a.localeCompare(b));
-  const studyQuizzes = library.quizzes
-    .filter(
-      (q) =>
-        (studyCategory === "All categories" || q.category === studyCategory) &&
-        (!["draft", "published"].includes(sort) || q.status === sort),
-    )
-    .sort((a, b) =>
-      studySort === "category"
-        ? a.category.localeCompare(b.category) || a.title.localeCompare(b.title)
-        : String(b.created || "").localeCompare(String(a.created || "")),
-    );
+  const discoverCategories = useMemo(
+    () =>
+      Array.from(new Set(quizzes.map((q) => q.category))).sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [quizzes],
+  );
+  const categories = useMemo(
+    () =>
+      Array.from(new Set(library.quizzes.map((q) => q.category))).sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [library.quizzes],
+  );
+  const studyQuizzes = useMemo(
+    () =>
+      library.quizzes
+        .filter(
+          (q) =>
+            (studyCategory === "All categories" ||
+              q.category === studyCategory) &&
+            (!["draft", "published"].includes(sort) || q.status === sort),
+        )
+        .sort((a, b) =>
+          studySort === "category"
+            ? a.category.localeCompare(b.category) ||
+              a.title.localeCompare(b.title)
+            : String(b.created || "").localeCompare(String(a.created || "")),
+        ),
+    [library.quizzes, studyCategory, sort, studySort],
+  );
   const cards = (items: Quiz[], editable = false) => (
     <div className="quiz-grid" role="region" aria-label="Quizzes" tabIndex={0}>
       {items.map((q) => (
@@ -551,6 +572,7 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
             <Studio
               key={editId}
               id={editId}
+              onSaved={() => void refreshLibrary()}
               onBack={() => {
                 navigate("quizzes");
                 void load();
@@ -1094,7 +1116,7 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
                           {Math.round((a.score / a.maximum) * 100)}%
                         </strong>
                         <span data-label="Time">
-                          {Math.round((a.submitted - a.started) / 1000)}s
+                          {formatHistoryDuration(a.submitted - a.started)}
                         </span>
                         <time
                           data-label="Date"
@@ -1213,15 +1235,21 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
           <input
             type="file"
             accept=".json,application/json"
+            disabled={busy}
             onChange={async (event) => {
               const file = event.target.files?.[0];
               if (!file) return;
-              if (file.size > 30_000_000) {
-                setTransferError("Choose a file smaller than 30 MB.");
-                return;
+              setBusy(true);
+              try {
+                setTransferText(await file.text());
+                setTransferError("");
+              } catch {
+                setTransferError(
+                  "This file could not be read. Choose it again.",
+                );
+              } finally {
+                setBusy(false);
               }
-              setTransferText(await file.text());
-              setTransferError("");
             }}
           />
         </label>
@@ -1229,11 +1257,16 @@ export default function App({ onReady }: { onReady?: () => void } = {}) {
           Quiz or backup JSON
           <textarea
             rows={7}
+            wrap="off"
+            spellCheck={false}
+            readOnly={busy}
+            aria-busy={busy}
             value={transferText}
             onChange={(event) => setTransferText(event.target.value)}
           />
         </label>
         {transferError && <p role="alert">{transferError}</p>}
+        {busy && <p role="status">Preparing your quiz data…</p>}
         <div className="button-row">
           <Button
             type="button"
@@ -1378,6 +1411,10 @@ function Empty({
       </Button>
     </div>
   );
+}
+function formatHistoryDuration(milliseconds: number) {
+  const minutes = Math.max(0, Math.floor(milliseconds / 60000));
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 function streak(attempts: Library["attempts"]) {
   const days = [
